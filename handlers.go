@@ -24,4 +24,5 @@ func HandleError(w http.ResponseWriter, err error) {
 // Index handler.
 func indexHandler(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
 	w.WriteHeader(200)
+	w.Write([]byte("Hello!\n"))
 }
