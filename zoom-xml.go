@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"log"
 	"path"
-	"regexp"
 	"strings"
 	"time"
 
@@ -144,18 +143,6 @@ func getProdutcts() (results []product) {
 		log.Fatal(err)
 	}
 	return results
-}
-
-func findEan(s string) string {
-	lines := strings.Split(s, "\n")
-	// (?i) case-insensitive flag.
-	r := regexp.MustCompile(`(?i).*ean.*`)
-	for _, line := range lines {
-		if r.MatchString(line) {
-			return strings.TrimSpace(strings.Split(line, ";")[1])
-		}
-	}
-	return ""
 }
 
 func saveXML(products []product) {

@@ -142,8 +142,8 @@ func checkZoomAuthorization(h httprouter.Handle) httprouter.Handle {
 			h(w, req, p)
 			return
 		}
-		log.Printf("try  , %v %v, user: %v, pass: %v, ok: %v", req.Method, req.URL.Path, user, pass, ok)
-		log.Printf("want , %v %v, user: %v, pass: %v", req.Method, req.URL.Path, zoomUser(), zoomPass())
+		// log.Printf("try  , %v %v, user: %v, pass: %v, ok: %v", req.Method, req.URL.Path, user, pass, ok)
+		// log.Printf("want , %v %v, user: %v, pass: %v", req.Method, req.URL.Path, zoomUser(), zoomPass())
 		// Unauthorised.
 		w.Header().Set("WWW-Authenticate", `Basic realm="Please enter your username and password for this service"`)
 		w.WriteHeader(401)
