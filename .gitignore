@@ -1,4 +1,4 @@
 vendor/
 s.go
-b2b-product
+productsrv
 .gitsecret/keys/random_seed

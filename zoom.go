@@ -1,13 +1,9 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
-	"net/http"
-	"regexp"
 	"time"
 
-	"github.com/julienschmidt/httprouter"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -53,34 +49,27 @@ type productZoom struct {
 	Images           []string           `bson:"images" xml:"-"`
 }
 
-// Products to update.
-var productListU = []string{}
-var updateZoomProductsTimer = time.NewTimer(time.Second * 1)
+// Zoom tieck.
+var zoomTicker *time.Ticker
 
-// var updateZoomProductsTimer *time.Timer
-var secondsToUpdateZoomProducts time.Duration = 3
-
-// Zunka product updated.
-func productHandlerPost(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
-	body, err := ioutil.ReadAll(req.Body)
-	HandleError(w, err)
-
-	// Get product id.
-	productId := string(body)
-	// log.Printf("productId: %s", string(productId))
-
-	// Check if id is valid.
-	validID := regexp.MustCompile(`(?i)^[a-f\d]{24}$`)
-	if validID.MatchString(productId) {
-		productListU = append(productListU, productId)
+// Start zoom product update.
+func startZoomProductUpdate() {
+	zoomTicker = time.NewTicker(time.Second * 3)
+	for {
+		select {
+		case <-zoomTicker.C:
+			updateZoomProducts()
+		}
 	}
-	updateZoomProductsTimer.Stop()
-	updateZoomProductsTimer = time.AfterFunc(time.Second*secondsToUpdateZoomProducts, updateZoomProducts)
-	log.Printf("productList: %v", productListU)
+}
+
+// Stop zoom product update.
+func stopZoomProductUpdate() {
+	zoomTicker.Stop()
+	log.Println("Zoom update products stopped")
 }
 
 // Update zoom producs.
 func updateZoomProducts() {
-	log.Printf("updateZoomProducts: %v", productListU)
-	productListU = []string{}
+	log.Printf("updateZoomProducts\n")
 }

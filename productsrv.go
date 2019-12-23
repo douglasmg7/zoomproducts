@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"strings"
 	"time"
@@ -17,7 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-var port string
+var address string
 
 var client *mongo.Client
 var err error
@@ -28,8 +29,8 @@ var dev bool
 var initTime time.Time
 
 func init() {
-	// Service port.
-	port = "8082"
+	// Listern address.
+	address = ":8082"
 
 	// Path for log.
 	zunkaPathdata := os.Getenv("ZUNKAPATH")
@@ -48,7 +49,7 @@ func init() {
 	os.MkdirAll(xmlZoomPath, os.ModePerm)
 
 	// Log file.
-	logFile, err := os.OpenFile(path.Join(logPath, "b2b-product.log"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	logFile, err := os.OpenFile(path.Join(logPath, "productsrv.log"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		panic(err)
 	}
@@ -66,7 +67,7 @@ func init() {
 	}
 
 	// Log start.
-	log.Printf("*** Starting b2b-product in %v mode (version %s) ***\n", mode, version)
+	log.Printf("*** Starting productsrv in %v mode (version %s) ***\n", mode, version)
 }
 
 func main() {
@@ -85,22 +86,54 @@ func main() {
 
 	// Init router.
 	router := httprouter.New()
-	router.GET("/b2b-product", checkZoomAuthorization(indexHandler))
+	router.GET("/productsrv", checkZoomAuthorization(indexHandler))
 
-	// Zoom API.
-	router.POST("/b2b-product/product", checkZoomAuthorization(productHandlerPost))
+	go startZoomProductUpdate()
 
-	// // Disconnect from mongoDB.
-	// err = client.Disconnect(ctxClient)
-	// checkFatalError(err)
-	log.Println("listen port", port)
-	log.Fatal(http.ListenAndServe(":"+port, newLogger(router)))
+	// Create server.
+	server := &http.Server{
+		Addr:    address,
+		Handler: router,
+		// ErrorLog:     logger,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  15 * time.Second,
+	}
+
+	// Gracegull shutdown.
+	serverStopFinish := make(chan bool, 1)
+	serverStopRequest := make(chan os.Signal, 1)
+	signal.Notify(serverStopRequest, os.Interrupt)
+	go gracefullShutdown(server, serverStopRequest, serverStopFinish)
+
+	log.Println("listen address", address)
+	// log.Fatal(http.ListenAndServe(address, newLogger(router)))
+	if err = server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Error: Could not listen on %s. %v\n", address, err)
+	}
+	<-serverStopFinish
+	log.Println("Server stopped")
+}
+
+func gracefullShutdown(server *http.Server, serverStopRequest <-chan os.Signal, serverStopFinish chan<- bool) {
+	<-serverStopRequest
+	log.Println("Server is shutting down...")
+
+	stopZoomProductUpdate()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	server.SetKeepAlivesEnabled(false)
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Could not gracefully shutdown the server: %v\n", err)
+	}
+	close(serverStopFinish)
 }
 
 /**************************************************************************************************
 * Authorization middleware
 **************************************************************************************************/
-
 // Authorization.
 func checkZoomAuthorization(h httprouter.Handle) httprouter.Handle {
 	return func(w http.ResponseWriter, req *http.Request, p httprouter.Params) {
