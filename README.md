@@ -1,1 +1,1 @@
-# b2b-product
+# productsrv
