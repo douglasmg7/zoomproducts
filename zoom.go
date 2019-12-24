@@ -16,20 +16,21 @@ import (
 )
 
 type productZunka struct {
-	ObjectID primitive.ObjectID `bson:"_id,omitempty"`
-	Name     string             `bson:"storeProductTitle" xml:"NOME"`
-	Category string             `bson:"storeProductCategory"`
-	Detail   string             `bson:"storeProductDetail"`
-	TechInfo string             `bson:"storeProductTechnicalInformation"` // To get get ean.
-	Price    float64            `bson:"storeProductPrice"`
-	EAN      string             `bson:"ean"` // EAN – (European Article Number)
-	Lenght   int                `bson:"storeProductLength"`
-	Height   int                `bson:"storeProductHeight"`
-	Width    int                `bson:"storeProductWidth"`
-	Weight   int                `bson:"storeProductWeight"`
-	Quantity int                `bson:"storeProductQtd"`
-	Active   bool               `bson:"storeProductActive"`
-	Images   []string           `bson:"images"`
+	ObjectID  primitive.ObjectID `bson:"_id,omitempty"`
+	Name      string             `bson:"storeProductTitle" xml:"NOME"`
+	Category  string             `bson:"storeProductCategory"`
+	Detail    string             `bson:"storeProductDetail"`
+	TechInfo  string             `bson:"storeProductTechnicalInformation"` // To get get ean.
+	Price     float64            `bson:"storeProductPrice"`
+	EAN       string             `bson:"ean"` // EAN – (European Article Number)
+	Lenght    int                `bson:"storeProductLength"`
+	Height    int                `bson:"storeProductHeight"`
+	Width     int                `bson:"storeProductWidth"`
+	Weight    int                `bson:"storeProductWeight"`
+	Quantity  int                `bson:"storeProductQtd"`
+	Active    bool               `bson:"storeProductActive"`
+	Images    []string           `bson:"images"`
+	UpdatedAt time.Time          `bson:"updatedAt"`
 }
 type urlImageZoom struct {
 	Main bool   `json:"main"`
@@ -68,7 +69,7 @@ var zoomTicker *time.Ticker
 
 // Start zoom product update.
 func startZoomProductUpdate() {
-	zoomTicker = time.NewTicker(time.Second * 3)
+	zoomTicker = time.NewTicker(time.Second * 30)
 	for {
 		select {
 		case <-zoomTicker.C:
@@ -87,15 +88,20 @@ func stopZoomProductUpdate() {
 func updateZoomProducts() {
 	zoomProducts := getZoomProdutctsToUpdate()
 	// jsonZoomProducts, err := json.Marshal(zoomProducts)
-	jsonZoomProducts, err := json.MarshalIndent(zoomProducts, "", "    ")
+	// jsonZoomProducts, err := json.MarshalIndent(zoomProducts, "", "    ")
+	_, err := json.MarshalIndent(zoomProducts, "", "    ")
 	if err != nil {
 		log.Fatalf("Error creating json zoom products. %v", err)
 	}
-	log.Println("zoom-products:", string(jsonZoomProducts))
+	// log.Println("zoom-products:", string(jsonZoomProducts))
+	updateNewestProductUpdatedAt()
 }
 
 // Get zoom products to update.
 func getZoomProdutctsToUpdate() (results []productZoom) {
+	// To save the new one when finish.
+	newestProductUpdatedAtTemp = newestProductUpdatedAt
+
 	collection := client.Database("zunka").Collection("products")
 
 	ctxFind, _ := context.WithTimeout(context.Background(), 3*time.Second)
@@ -116,6 +122,9 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 		{"storeProductTitle", bson.D{
 			{"$regex", `\S`},
 		}},
+		{"updatedAt", bson.D{
+			{"$gt", newestProductUpdatedAt},
+		}},
 	}
 	findOptions := options.Find()
 	findOptions.SetProjection(bson.D{
@@ -133,9 +142,10 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 		{"storeProductQtd", true},
 		{"ean", true},
 		{"images", true},
+		{"updatedAt", true},
 	})
 	// todo - comment.
-	findOptions.SetLimit(12)
+	// findOptions.SetLimit(12)
 	cur, err := collection.Find(ctxFind, filter, findOptions)
 	checkFatalError(err)
 
@@ -180,8 +190,6 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 		prodZoom.Availability = prodZunka.Active
 		prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
 		// Images.
-		log.Println("len(prodZoom.UrlImages):", len(prodZoom.UrlImages))
-		// prodZoom.UrlImages = []productZoom.urlImages{}
 		for index, urlImage := range prodZunka.Images {
 			if index == 0 {
 				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{true, "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
@@ -189,8 +197,18 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{false, "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
 			}
 		}
-		// prodZunka.UrlImage = "https://www.zunka.com.br/img/" + prodZunka.ID + "/" + prodZunka.Images[0]
 		results = append(results, prodZoom)
+		log.Printf("Product changed - %v, %v\n", prodZoom.ID, prodZunka.UpdatedAt)
+
+		// todo - comment.
+		// log.Println("")
+		// log.Printf("product: %v\n", prodZunka.UpdatedAt)
+		// log.Printf("temp   : %v\n", newestProductUpdatedAtTemp)
+		// Set newest updated time.
+		if prodZunka.UpdatedAt.After(newestProductUpdatedAtTemp) {
+			// log.Println("time updated")
+			newestProductUpdatedAtTemp = prodZunka.UpdatedAt
+		}
 	}
 	if err := cur.Err(); err != nil {
 		log.Fatal(err)

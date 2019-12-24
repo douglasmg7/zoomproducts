@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/julienschmidt/httprouter"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
@@ -27,6 +28,15 @@ var logPath, xmlZoomPath string
 // Development mode.
 var dev bool
 var initTime time.Time
+
+// Newest updated time product processed.
+var newestProductUpdatedAt time.Time
+
+// Newest updated time product processed temp.
+var newestProductUpdatedAtTemp time.Time
+
+// Newest updated time product processed db param name.
+const NEWEST_PRODUCT_UPDATED_AT = "productsrv-newest-product-updated-at"
 
 func init() {
 	// Listern address.
@@ -67,27 +77,33 @@ func init() {
 	}
 
 	// Log start.
-	log.Printf("*** Starting productsrv in %v mode (version %s) ***\n", mode, version)
+	log.Printf("** Starting productsrv in %v mode (version %s) **\n", mode, version)
 }
 
 func main() {
 	// MongoDB config.
 	client, err = mongo.NewClient(options.Client().ApplyURI(zunkaSiteMongoDBConnectionString))
+
 	// MongoDB client.
 	ctxClient, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	err = client.Connect(ctxClient)
-	checkFatalError(err)
+	if err != nil {
+		log.Fatalf("Error. Could not connect to mongodb. %v\n", err)
+	}
 
 	// Ping mongoDB.
 	ctxPing, _ := context.WithTimeout(context.Background(), 2*time.Second)
 	err = client.Ping(ctxPing, readpref.Primary())
-	checkFatalError(err)
+	if err != nil {
+		log.Fatalf("Error. Could not ping mongodb. %v\n", err)
+	}
 
 	// Init router.
 	router := httprouter.New()
 	router.GET("/productsrv", checkZoomAuthorization(indexHandler))
 
+	getNewestProductUpdatedAt()
 	go startZoomProductUpdate()
 
 	// Create server.
@@ -227,4 +243,64 @@ func checkFatalError(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+/**************************************************************************************************
+* Last time products was retrived from db.
+**************************************************************************************************/
+
+// Get newest product updated at from db.
+func getNewestProductUpdatedAt() {
+	collection := client.Database("zunka").Collection("params")
+
+	ctxFind, _ := context.WithTimeout(context.Background(), 3*time.Second)
+	// D: A BSON document. This type should be used in situations where order matters, such as MongoDB commands.
+	// M: An unordered map. It is the same as D, except it does not preserve order.
+	// A: A BSON array.
+	// E: A single element inside a D.
+	// options.Find().SetProjection(bson.D{{"storeProductTitle", true}, {"_id", false}}),
+	// {'storeProductCommercialize': true, 'storeProductTitle': {$regex: /\S/}, 'storeProductQtd': {$gt: 0}, 'storeProductPrice': {$gt: 0}};
+	filter := bson.D{
+		{"name", NEWEST_PRODUCT_UPDATED_AT},
+		// {"storeProductQtd", bson.D{
+		// {"$gt", 0},
+		// }},
+	}
+	// findOptions := options.Find()
+	// findOptions.SetProjection(bson.D{
+	// {"_id", false},
+	// {"value", true},
+	// })
+	var result struct {
+		Value time.Time `bson:"value"`
+	}
+	// cur, err := collection.FindOne(ctxFind, filter, findOptions).Decode(&result)
+	err := collection.FindOne(ctxFind, filter).Decode(&result)
+	if err == mongo.ErrNoDocuments {
+		log.Printf("Not exist param %s into db.", NEWEST_PRODUCT_UPDATED_AT)
+		newestProductUpdatedAt = time.Time{}
+	} else if err != nil {
+		log.Fatalf("Error. Could not retrive param %s from db. %v\n", NEWEST_PRODUCT_UPDATED_AT, err)
+	}
+	log.Println("Read productsrv-last-time-products-was-retrived-from-db: ", result.Value.Local())
+	newestProductUpdatedAt = result.Value
+}
+
+// Save newest product updated at into db.
+func updateNewestProductUpdatedAt() {
+	if newestProductUpdatedAt.Equal(newestProductUpdatedAtTemp) {
+		return
+	}
+	newestProductUpdatedAt = newestProductUpdatedAtTemp
+	collection := client.Database("zunka").Collection("params")
+	ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
+	filter := bson.M{"name": NEWEST_PRODUCT_UPDATED_AT}
+	update := bson.M{
+		"$set": bson.M{"value": newestProductUpdatedAt},
+	}
+	_, err := collection.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		log.Fatalf("Could not save %s into db.", NEWEST_PRODUCT_UPDATED_AT)
+	}
+	log.Printf("Saved %s into db: %v", NEWEST_PRODUCT_UPDATED_AT, newestProductUpdatedAt)
 }
