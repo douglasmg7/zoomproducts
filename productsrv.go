@@ -81,6 +81,8 @@ func init() {
 }
 
 func main() {
+	apiGetProducts()
+	return
 	// MongoDB config.
 	client, err = mongo.NewClient(options.Client().ApplyURI(zunkaSiteMongoDBConnectionString))
 
@@ -213,7 +215,8 @@ func newLogger(h http.Handler) *logger {
 func apiGetProducts() {
 	// Request products.
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
+	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
+	req, err := http.NewRequest("GET", "https://staging-merchant.zoom.com.br/api/merchant/products", nil)
 	req.Header.Set("Content-Type", "application/json")
 	checkFatalError(err)
 
