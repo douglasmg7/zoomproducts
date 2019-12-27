@@ -33,32 +33,32 @@ type productZunka struct {
 	UpdatedAt time.Time          `bson:"updatedAt"`
 }
 type urlImageZoom struct {
-	Main bool   `json:"main"`
+	Main string `json:"main"`
 	Url  string `json:"url"`
 }
 type productZoom struct {
 	ID string `json:"id"`
 	// SKU           string `json:"sku"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Department    string `json:"department"`
-	SubDepartment string `json:"sub_department"`
-	EAN           string `json:"ean"` // EAN – (European Article Number)
-	FreeShipping  bool   `json:"free_shipping"`
-	BasePrice     string `json:"base_price"`
-	Price         string `json:"price"`
-	Installments  struct {
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Department    string   `json:"department"`
+	SubDepartment string   `json:"sub_department"`
+	EAN           string   `json:"ean"` // EAN – (European Article Number)
+	FreeShipping  string   `json:"free_shipping"`
+	BasePrice     string   `json:"base_price"` // Not used by marketplace
+	Price         string   `json:"price"`
+	Installments  struct { // Not used by marketplace
 		AmountMonths int    `json:"amount_months"`
 		Price        string `json:"price"` // Price by month
 	} `json:"installments"`
-	Quantity     int  `json:"quantity"`
-	Availability bool `json:"availability"`
+	Quantity     int    `json:"quantity"`
+	Availability string `json:"availability"`
 	Dimensions   struct {
-		CrossDocking int    `json:"cross_docking"`
-		Height       string `json:"height"`
-		Lenght       string `json:"lenght"`
-		Weight       string `json:"weight"`
-		Width        string `json:"width"`
+		CrossDocking int    `json:"cross_docking"` // Days
+		Height       string `json:"height"`        // M
+		Lenght       string `json:"lenght"`        // M
+		Width        string `json:"width"`         // M
+		Weight       string `json:"weight"`        // KG
 	} `json:"stock_info"`
 	UrlImages []urlImageZoom `json:"url_images"`
 	Url       string         `json:"url"`
@@ -88,12 +88,12 @@ func stopZoomProductUpdate() {
 func updateZoomProducts() {
 	zoomProducts := getZoomProdutctsToUpdate()
 	// jsonZoomProducts, err := json.Marshal(zoomProducts)
-	// jsonZoomProducts, err := json.MarshalIndent(zoomProducts, "", "    ")
-	_, err := json.MarshalIndent(zoomProducts, "", "    ")
+	jsonZoomProducts, err := json.MarshalIndent(zoomProducts, "", "    ")
+	// _, err := json.MarshalIndent(zoomProducts, "", "    ")
 	if err != nil {
 		log.Fatalf("Error creating json zoom products. %v", err)
 	}
-	// log.Println("zoom-products:", string(jsonZoomProducts))
+	log.Println("zoom-products:", string(jsonZoomProducts))
 	updateNewestProductUpdatedAt()
 }
 
@@ -167,13 +167,13 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 		// Sub department.
 		prodZoom.SubDepartment = prodZunka.Category
 		// Dimensions.
-		prodZoom.Dimensions.CrossDocking = 0 // ?
-		prodZoom.Dimensions.Lenght = strconv.Itoa(prodZunka.Lenght)
-		prodZoom.Dimensions.Height = strconv.Itoa(prodZunka.Height)
-		prodZoom.Dimensions.Width = strconv.Itoa(prodZunka.Width)
+		prodZoom.Dimensions.CrossDocking = 2 // ?
+		prodZoom.Dimensions.Lenght = fmt.Sprintf("%.3f", float64(prodZunka.Lenght)/100)
+		prodZoom.Dimensions.Height = fmt.Sprintf("%.3f", float64(prodZunka.Height)/100)
+		prodZoom.Dimensions.Width = fmt.Sprintf("%.3f", float64(prodZunka.Width)/100)
 		prodZoom.Dimensions.Weight = strconv.Itoa(prodZunka.Weight)
 		// Free shipping.
-		prodZoom.FreeShipping = false
+		prodZoom.FreeShipping = "false"
 		// EAN.
 		if prodZunka.EAN == "" {
 			prodZunka.EAN = findEan(prodZunka.TechInfo)
@@ -187,14 +187,14 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 		prodZoom.Installments.AmountMonths = 3
 		prodZoom.Installments.Price = fmt.Sprintf("%.2f", float64(int((prodZunka.Price/3)*100))/100)
 		prodZoom.Quantity = prodZunka.Quantity
-		prodZoom.Availability = prodZunka.Active
+		prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
 		prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
 		// Images.
 		for index, urlImage := range prodZunka.Images {
 			if index == 0 {
-				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{true, "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
+				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{"true", "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
 			} else {
-				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{false, "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
+				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{"false", "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
 			}
 		}
 		results = append(results, prodZoom)
