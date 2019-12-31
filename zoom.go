@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,7 +26,7 @@ type productZunka struct {
 	TechInfo  string             `bson:"storeProductTechnicalInformation"` // To get get ean.
 	Price     float64            `bson:"storeProductPrice"`
 	EAN       string             `bson:"ean"` // EAN – (European Article Number)
-	Lenght    int                `bson:"storeProductLength"`
+	Length    int                `bson:"storeProductLength"`
 	Height    int                `bson:"storeProductHeight"`
 	Width     int                `bson:"storeProductWidth"`
 	Weight    int                `bson:"storeProductWeight"`
@@ -32,10 +35,12 @@ type productZunka struct {
 	Images    []string           `bson:"images"`
 	UpdatedAt time.Time          `bson:"updatedAt"`
 }
+
 type urlImageZoom struct {
 	Main string `json:"main"`
 	Url  string `json:"url"`
 }
+
 type productZoom struct {
 	ID string `json:"id"`
 	// SKU           string `json:"sku"`
@@ -56,7 +61,7 @@ type productZoom struct {
 	Dimensions   struct {
 		CrossDocking int    `json:"cross_docking"` // Days
 		Height       string `json:"height"`        // M
-		Lenght       string `json:"lenght"`        // M
+		Length       string `json:"length"`        // M
 		Width        string `json:"width"`         // M
 		Weight       string `json:"weight"`        // KG
 	} `json:"stock_info"`
@@ -73,7 +78,8 @@ func startZoomProductUpdate() {
 	for {
 		select {
 		case <-zoomTicker.C:
-			updateZoomProducts()
+			// updateZoomProducts()
+			updateOneZoomProduct()
 		}
 	}
 }
@@ -84,21 +90,156 @@ func stopZoomProductUpdate() {
 	log.Println("Zoom update products stopped")
 }
 
-// Update zoom producs.
-func updateZoomProducts() {
-	zoomProducts := getZoomProdutctsToUpdate()
-	// jsonZoomProducts, err := json.Marshal(zoomProducts)
-	jsonZoomProducts, err := json.MarshalIndent(zoomProducts, "", "    ")
+// Update zoom produc.
+func updateOneZoomProduct() {
+	zoomProducts := getProductsToUpdateZoomServer()
+	if len(zoomProducts) == 0 {
+		return
+	}
+	zoomProductJSONPretty, err := json.MarshalIndent(zoomProducts[0], "", "    ")
+	zoomProductJSON, err := json.Marshal(zoomProducts[0])
 	// _, err := json.MarshalIndent(zoomProducts, "", "    ")
 	if err != nil {
 		log.Fatalf("Error creating json zoom products. %v", err)
 	}
-	log.Println("zoom-products:", string(jsonZoomProducts))
+	log.Println("zoom-products-pretty", string(zoomProductJSONPretty))
+
+	// Request products.
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", zoomHost()+"/product", bytes.NewBuffer(zoomProductJSON))
+	req.Header.Set("Content-Type", "application/json")
+	checkFatalError(err)
+
+	req.SetBasicAuth(zoomUser(), zoomPass())
+	res, err := client.Do(req)
+	checkFatalError(err)
+
+	defer res.Body.Close()
+	checkFatalError(err)
+
+	// Result.
+	resBody, err := ioutil.ReadAll(res.Body)
+	checkFatalError(err)
+	// No 200 status.
+	if res.StatusCode != 200 {
+		log.Fatalf("Error ao solicitar a criação do produto no servidor zoom, status: %v, body: %v", res.StatusCode, string(resBody))
+		return
+	}
+	// Log body result.
+	log.Printf("body: %s", string(resBody))
+
+	// Newest updatedAt product time.
 	updateNewestProductUpdatedAt()
 }
 
+// Update zoom producs.
+func updateZoomProducts() {
+	zoomProducts := getProductsToUpdateZoomServer()
+	if len(zoomProducts) == 0 {
+		return
+	}
+	zoomProductsJSONPretty, err := json.MarshalIndent(zoomProducts, "", "    ")
+	zoomProductsJSON, err := json.Marshal(zoomProducts)
+	if err != nil {
+		log.Fatalf("Error creating json zoom products. %v", err)
+	}
+	log.Println("zoom-products:", string(zoomProductsJSONPretty))
+
+	// Request products.
+	client := &http.Client{}
+	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
+	req, err := http.NewRequest("POST", zoomHost()+"/products", bytes.NewBuffer(zoomProductsJSON))
+	req.Header.Set("Content-Type", "application/json")
+	checkFatalError(err)
+
+	req.SetBasicAuth(zoomUser(), zoomPass())
+	// Devlopment.
+	// req.SetBasicAuth("zoomteste_zunka", "H2VA79Ug4fjFsJb")
+	// Production.
+	// req.SetBasicAuth("zunka_informatica*", "h8VbfoRoMOSgZ2B")
+	res, err := client.Do(req)
+	checkFatalError(err)
+
+	defer res.Body.Close()
+	checkFatalError(err)
+
+	// Result.
+	resBody, err := ioutil.ReadAll(res.Body)
+	checkFatalError(err)
+	// No 200 status.
+	if res.StatusCode != 200 {
+		log.Fatalf("Error ao solicitar a criação do produtos no servidor zoom, status: %v, body: %v", res.StatusCode, string(resBody))
+		return
+	}
+	// Log body result.
+	log.Printf("body: %s", string(resBody))
+
+	// Newest updatedAt product time.
+	updateNewestProductUpdatedAt()
+}
+
+func getZoomProducts() {
+	// Request products.
+	client := &http.Client{}
+	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
+	// req, err := http.NewRequest("GET", "https://staging-merchant.zoom.com.br/api/merchant/products", nil)
+	req, err := http.NewRequest("GET", zoomHost()+"/products", nil)
+	req.Header.Set("Content-Type", "application/json")
+	checkFatalError(err)
+
+	// Devlopment.
+	// req.SetBasicAuth("zoomteste_zunka", "H2VA79Ug4fjFsJb")
+	req.SetBasicAuth(zoomUser(), zoomPass())
+	// Production.
+	// req.SetBasicAuth("zunka_informatica*", "h8VbfoRoMOSgZ2B")
+	res, err := client.Do(req)
+	checkFatalError(err)
+
+	defer res.Body.Close()
+	checkFatalError(err)
+
+	// Result.
+	resBody, err := ioutil.ReadAll(res.Body)
+	checkFatalError(err)
+	// No 200 status.
+	if res.StatusCode != 200 {
+		log.Fatalf("Error getting products from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))
+		return
+	}
+	// Log body result.
+	log.Printf("body: %s", string(resBody))
+}
+
+// Get ticket information.
+func getZoomTicket(ticketId string) {
+	// Request products.
+	client := &http.Client{}
+	log.Println("host:", zoomHost()+"/receipt/"+ticketId)
+	req, err := http.NewRequest("GET", zoomHost()+"/receipt/"+ticketId, nil)
+	req.Header.Set("Content-Type", "application/json")
+	checkFatalError(err)
+
+	req.SetBasicAuth(zoomUser(), zoomPass())
+	res, err := client.Do(req)
+	checkFatalError(err)
+
+	defer res.Body.Close()
+	checkFatalError(err)
+
+	// Result.
+	resBody, err := ioutil.ReadAll(res.Body)
+	checkFatalError(err)
+	// No 200 status.
+	if res.StatusCode != 200 {
+		log.Fatalf("Error getting ticket from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))
+		return
+	}
+	// Log body result.
+	log.Printf("ticket body: %s", string(resBody))
+}
+
 // Get zoom products to update.
-func getZoomProdutctsToUpdate() (results []productZoom) {
+func getProductsToUpdateZoomServer() (results []productZoom) {
 	// To save the new one when finish.
 	newestProductUpdatedAtTemp = newestProductUpdatedAt
 
@@ -168,7 +309,7 @@ func getZoomProdutctsToUpdate() (results []productZoom) {
 		prodZoom.SubDepartment = prodZunka.Category
 		// Dimensions.
 		prodZoom.Dimensions.CrossDocking = 2 // ?
-		prodZoom.Dimensions.Lenght = fmt.Sprintf("%.3f", float64(prodZunka.Lenght)/100)
+		prodZoom.Dimensions.Length = fmt.Sprintf("%.3f", float64(prodZunka.Length)/100)
 		prodZoom.Dimensions.Height = fmt.Sprintf("%.3f", float64(prodZunka.Height)/100)
 		prodZoom.Dimensions.Width = fmt.Sprintf("%.3f", float64(prodZunka.Width)/100)
 		prodZoom.Dimensions.Weight = strconv.Itoa(prodZunka.Weight)

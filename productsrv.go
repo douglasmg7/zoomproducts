@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -81,8 +80,14 @@ func init() {
 }
 
 func main() {
-	apiGetProducts()
+	// // Test.
+	// getZoomProducts()
+	// return
+
+	// Test.
+	getZoomTicket("4a00ea48-3cda-463f-978c-239deab2f09b")
 	return
+
 	// MongoDB config.
 	client, err = mongo.NewClient(options.Client().ApplyURI(zunkaSiteMongoDBConnectionString))
 
@@ -210,36 +215,6 @@ func (l *logger) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // New logger.
 func newLogger(h http.Handler) *logger {
 	return &logger{handler: h}
-}
-
-func apiGetProducts() {
-	// Request products.
-	client := &http.Client{}
-	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
-	req, err := http.NewRequest("GET", "https://staging-merchant.zoom.com.br/api/merchant/products", nil)
-	req.Header.Set("Content-Type", "application/json")
-	checkFatalError(err)
-
-	// Devlopment.
-	req.SetBasicAuth("zoomteste_zunka", "H2VA79Ug4fjFsJb")
-	// Production.
-	// req.SetBasicAuth("zunka_informatica*", "h8VbfoRoMOSgZ2B")
-	res, err := client.Do(req)
-	checkFatalError(err)
-
-	defer res.Body.Close()
-	checkFatalError(err)
-
-	// Result.
-	resBody, err := ioutil.ReadAll(res.Body)
-	checkFatalError(err)
-	// No 200 status.
-	if res.StatusCode != 200 {
-		log.Fatalf("Error ao solicitar a criação do produtos no servidor zoom.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))
-		return
-	}
-	// Log body result.
-	log.Printf("body: %s", string(resBody))
 }
 
 func checkFatalError(err error) {
