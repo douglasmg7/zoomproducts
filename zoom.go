@@ -69,7 +69,39 @@ type productZoom struct {
 	Url       string         `json:"url"`
 }
 
-// Zoom tieck.
+type zoomReceipt struct {
+	// ticket           string    `json:"ticket"`
+	// scrollId         string    `json:"scrollId"`
+	Finished         bool                `json:"finished"`
+	Quantity         int                 `json:"quantity"`
+	RequestTimestamp zoomTime            `json:"requestTimestamp"`
+	Results          []zoomReceiptResult `json:"results"`
+}
+
+type zoomReceiptResult struct {
+	ProductId    string   `json:"product_id"`
+	Status       int      `json:"status"`
+	Message      string   `json:"message"`
+	WarnMessages []string `json:"warning_messages"`
+}
+
+// To unmarshal diferent data format.
+type zoomTime struct {
+	time.Time
+}
+
+func (t *zoomTime) UnmarshalJSON(j []byte) error {
+	s := string(j)
+	s = strings.Trim(s, `"`)
+	newTime, err := time.Parse("2006-01-02T15:04:05", s)
+	if err != nil {
+		return err
+	}
+	t.Time = newTime
+	return nil
+}
+
+// Zoom ticker.
 var zoomTicker *time.Ticker
 
 // Start zoom product update.
@@ -210,11 +242,11 @@ func getZoomProducts() {
 	log.Printf("body: %s", string(resBody))
 }
 
-// Get ticket information.
-func getZoomTicket(ticketId string) {
+// Get receipt information.
+func getZoomReceipt(ticketId string) {
 	// Request products.
 	client := &http.Client{}
-	log.Println("host:", zoomHost()+"/receipt/"+ticketId)
+	// log.Println("host:", zoomHost()+"/receipt/"+ticketId)
 	req, err := http.NewRequest("GET", zoomHost()+"/receipt/"+ticketId, nil)
 	req.Header.Set("Content-Type", "application/json")
 	checkFatalError(err)
@@ -235,7 +267,23 @@ func getZoomTicket(ticketId string) {
 		return
 	}
 	// Log body result.
-	log.Printf("ticket body: %s", string(resBody))
+	log.Printf("Ticket body: %s", string(resBody))
+
+	var receipt zoomReceipt
+	err = json.Unmarshal(resBody, &receipt)
+	if err != nil {
+		log.Fatalf("Error unmarshal zoom receipt. %v", err)
+	}
+	log.Printf("zoom receipt: %+v\n", receipt)
+
+	// Test.
+	// resBody := []byte(`{"quantity":1,"finished":true,"requestTimestamp":"2019-12-31T10:39:51","results":[{"product_id":"5bcb31914253f81781faca07","status":200,"message":"O produto foi atualizado com sucesso","warning_messages":["Dados informados da oferta são iguais aos dados informados nas requisições anteriores. Considere enviar requisições apenas quando uma mudança for necessária."]}]}`)
+	// var receipt zoomReceipt
+	// err = json.Unmarshal(resBody, &receipt)
+	// if err != nil {
+	// log.Fatalf("Error unmarshal zoom receipt. %v", err)
+	// }
+	// log.Printf("zoom receipt: %+v\n", receipt.Results[0].WarnMessages[0])
 }
 
 // Get zoom products to update.

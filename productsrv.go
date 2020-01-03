@@ -85,7 +85,7 @@ func main() {
 	// return
 
 	// Test.
-	getZoomTicket("4a00ea48-3cda-463f-978c-239deab2f09b")
+	getZoomReceipt("4a00ea48-3cda-463f-978c-239deab2f09b")
 	return
 
 	// MongoDB config.
