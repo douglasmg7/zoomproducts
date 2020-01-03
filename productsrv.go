@@ -85,8 +85,8 @@ func main() {
 	// return
 
 	// Test.
-	getZoomReceipt("4a00ea48-3cda-463f-978c-239deab2f09b")
-	return
+	// getZoomReceipt("4a00ea48-3cda-463f-978c-239deab2f09b")
+	// return
 
 	// MongoDB config.
 	client, err = mongo.NewClient(options.Client().ApplyURI(zunkaSiteMongoDBConnectionString))
