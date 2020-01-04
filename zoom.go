@@ -70,6 +70,7 @@ type productZoom struct {
 	Url       string         `json:"url"`
 }
 
+// To get zoom receipt information using the ticket number.
 type zoomReceipt struct {
 	// ticket           string    `json:"ticket"`
 	// scrollId         string    `json:"scrollId"`
@@ -78,7 +79,6 @@ type zoomReceipt struct {
 	RequestTimestamp zoomTime            `json:"requestTimestamp"`
 	Results          []zoomReceiptResult `json:"results"`
 }
-
 type zoomReceiptResult struct {
 	ProductId    string   `json:"product_id"`
 	Status       int      `json:"status"`
@@ -102,23 +102,35 @@ func (t *zoomTime) UnmarshalJSON(j []byte) error {
 	return nil
 }
 
+// To get result of product insertion or edit.
+type zoomTicket struct {
+	ID         string             `json:"ticket"`
+	Results    []zoomTicketResult `json:"results"`
+	ReceivedAt time.Time
+	TickCount  int // Number of ticks before get finish from zoom server.
+}
+type zoomTicketResult struct {
+	ProductId string `json:"product_id"`
+	Status    int    `json:"status"`
+	Message   string `json:"message"`
+}
+
 // Tickets to check.
-var zoomTickets map[string]int
+var zoomTickets map[string]*zoomTicket
 
 // Zoom tickets.
 var zoomTicker *time.Ticker
 
 // Start zoom product update.
 func startZoomProductUpdate() {
-	zoomTickets = map[string]int{}
-	zoomTicker = time.NewTicker(time.Second * 30)
+	zoomTickets = map[string]*zoomTicket{}
+	zoomTicker = time.NewTicker(time.Second * 5)
 	for {
 		select {
 		case <-zoomTicker.C:
-			// updateZoomProducts()
-			log.Println("Tick to update products")
+			log.Println(":: Tick")
 			// updateOneZoomProduct()
-			updateZoomProducts()
+			updateManyZoomProducts()
 		}
 	}
 }
@@ -136,13 +148,16 @@ func updateOneZoomProduct() {
 	if len(zoomProducts) == 0 {
 		return
 	}
+
+	// Just for conference.
 	zoomProductJSONPretty, err := json.MarshalIndent(zoomProducts[0], "", "    ")
+	log.Println("zoomProductJSONPretty:", string(zoomProductJSONPretty))
+
 	zoomProductJSON, err := json.Marshal(zoomProducts[0])
 	// _, err := json.MarshalIndent(zoomProducts, "", "    ")
 	if err != nil {
 		log.Fatalf("Error creating json zoom products. %v", err)
 	}
-	log.Println("zoom-products-pretty", string(zoomProductJSONPretty))
 
 	// Request products.
 	client := &http.Client{}
@@ -173,7 +188,7 @@ func updateOneZoomProduct() {
 }
 
 // Update zoom producs.
-func updateZoomProducts() {
+func updateManyZoomProducts() {
 	// Check if tickets fineshed.
 	checkZoomTicketsFinish()
 
@@ -181,48 +196,68 @@ func updateZoomProducts() {
 	if len(zoomProducts) == 0 {
 		return
 	}
-	// Log products to update.
-	var sb strings.Builder
-	for _, product := range zoomProducts {
-		sb.WriteString(product.ID + ", ")
-	}
-	log.Println("Products to update at zoom server:", sb.String())
+
+	// // Log products to update.
+	// var sb strings.Builder
+	// for _, product := range zoomProducts {
+	// sb.WriteString(product.ID + ", ")
+	// }
+	// log.Println("Products to update at zoom server:", sb.String())
 
 	// zoomProductsJSONPretty, err := json.MarshalIndent(zoomProducts, "", "    ")
-	zoomProductsJSON, err := json.Marshal(zoomProducts)
+	p := struct {
+		Products []productZoom `json:"products"`
+	}{
+		Products: zoomProducts,
+	}
+
+	// Log request.
+	// zoomProductsJSONPretty, err := json.MarshalIndent(p, "", "    ")
+	// log.Println("zoomProductsJSONPretty:", string(zoomProductsJSONPretty))
+
+	zoomProductsJSON, err := json.Marshal(p)
 	if err != nil {
 		log.Fatalf("Error creating json zoom products. %v", err)
 	}
-	// log.Println("zoom-products:", string(zoomProductsJSONPretty))
 
 	// Request products.
 	client := &http.Client{}
-	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
 	req, err := http.NewRequest("POST", zoomHost()+"/products", bytes.NewBuffer(zoomProductsJSON))
 	req.Header.Set("Content-Type", "application/json")
-	checkFatalError(err)
+	if err != nil {
+		log.Printf("Error creating request for create/edit product on zoom server. %v", err)
+	}
 
 	req.SetBasicAuth(zoomUser(), zoomPass())
-	// Devlopment.
-	// req.SetBasicAuth("zoomteste_zunka", "H2VA79Ug4fjFsJb")
-	// Production.
-	// req.SetBasicAuth("zunka_informatica*", "h8VbfoRoMOSgZ2B")
 	res, err := client.Do(req)
-	checkFatalError(err)
-
+	if err != nil {
+		log.Printf("Error requesting create/edit product on zoom server. %v", err)
+	}
 	defer res.Body.Close()
-	checkFatalError(err)
 
 	// Result.
 	resBody, err := ioutil.ReadAll(res.Body)
 	checkFatalError(err)
 	// No 200 status.
-	if res.StatusCode != 200 {
-		log.Fatalf("Error ao solicitar a criação/edição de produtos no servidor zoom, status: %v, body: %v", res.StatusCode, string(resBody))
+	if res.StatusCode != 200 && res.StatusCode != 201 {
+		log.Printf("Error. Not received status 200 from create/edit product from zoom server, status: %v, body: %v", res.StatusCode, string(resBody))
 		return
 	}
 	// Log body result.
-	log.Printf("body: %s", string(resBody))
+	// log.Printf("body: %s", string(resBody))
+
+	// Get ticket.
+	var ticket zoomTicket
+	err = json.Unmarshal(resBody, &ticket)
+	if err != nil {
+		log.Fatalf("Error unmarshal zoom ticket from updateManyZoomProducts. %v", err)
+	}
+	// Log ticket.
+	// log.Printf("resBody: %v", string(resBody))
+
+	// Add ticket to be checked.
+	log.Printf("Zoom ticket added. ID: %v", ticket.ID)
+	zoomTickets[ticket.ID] = &ticket
 
 	// Newest updatedAt product time.
 	updateNewestProductUpdatedAt()
@@ -231,17 +266,19 @@ func updateZoomProducts() {
 // Check if tickets finished.
 func checkZoomTicketsFinish() {
 	for k, v := range zoomTickets {
-		log.Printf("Checking zoom ticket %v, count: %v", k, v)
+		v.TickCount = v.TickCount + 1
+		log.Printf("Checking zoom ticket. ID: %v, TickCount: %d \n", v.ID, v.TickCount)
 		receipt, err := getZoomReceipt(k)
 		if err != nil {
-			log.Println(err)
+			log.Println(fmt.Sprintf("Error getting zoom ticket. %v\n.", err))
 			continue
 		}
 		// Finished.
 		if receipt.Finished {
-			for result := range receipt.Results {
-				log.Printf("Ticket: %s, Result:%v\n", k, result)
-			}
+			log.Printf("Zoom ticket finished. Ticket: %v\n", receipt)
+			// for result := range receipt.Results {
+			// log.Printf("Ticket finished: %s, Result:%v\n", k, result)
+			// }
 			delete(zoomTickets, k)
 		}
 	}
@@ -286,50 +323,39 @@ func getZoomReceipt(ticketId string) (receipt zoomReceipt, err error) {
 	// log.Println("host:", zoomHost()+"/receipt/"+ticketId)
 	req, err := http.NewRequest("GET", zoomHost()+"/receipt/"+ticketId, nil)
 	req.Header.Set("Content-Type", "application/json")
-	checkFatalError(err)
+	if err != nil {
+		return receipt, errors.New(fmt.Sprintf("Error creating ticket request.  %v\n", err))
+	}
 
 	req.SetBasicAuth(zoomUser(), zoomPass())
 	res, err := client.Do(req)
-	checkFatalError(err)
-
+	if err != nil {
+		return receipt, errors.New(fmt.Sprintf("Error creating zoom receipt request. %v\n", err))
+	}
 	defer res.Body.Close()
-	checkFatalError(err)
 
 	// Result.
 	resBody, err := ioutil.ReadAll(res.Body)
-	checkFatalError(err)
+	if res.StatusCode != 200 && res.StatusCode != 201 {
+		return receipt, errors.New(fmt.Sprintf("Error reading ticket from zoom server.  %v\n", err))
+	}
+
 	// No 200 status.
 	if res.StatusCode != 200 && res.StatusCode != 201 {
-		return receipt, errors.New(fmt.Sprintf("Error getting ticket from zoom server. status: %d, body: %s", res.StatusCode, string(resBody)))
+		return receipt, errors.New(fmt.Sprintf("Error getting ticket from zoom server. status: %d\n, body: %s", res.StatusCode, string(resBody)))
 	}
 	// Log body result.
-	log.Printf("Ticket body: %s", string(resBody))
+	// log.Printf("Ticket body: %s", string(resBody))
 
 	err = json.Unmarshal(resBody, &receipt)
 	if err != nil {
-		log.Fatalf("Error unmarshal zoom receipt. %v", err)
+		return receipt, errors.New(fmt.Sprintf("Error unmarshal zoom receipt. %v", err))
 	}
 
-	// // Check each product.
-	// for item := range receipt.Results {
-	// if item.Status != 200 && res.Status != 201 {
-	// log.Println("Error getting ticket from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))
-	// return
-	// }
+	// Log receipt.
+	// log.Printf("zoom receipt: %+v\n", receipt)
 
-	// }
-
-	log.Printf("zoom receipt: %+v\n", receipt)
 	return receipt, nil
-
-	// Test.
-	// resBody := []byte(`{"quantity":1,"finished":true,"requestTimestamp":"2019-12-31T10:39:51","results":[{"product_id":"5bcb31914253f81781faca07","status":200,"message":"O produto foi atualizado com sucesso","warning_messages":["Dados informados da oferta são iguais aos dados informados nas requisições anteriores. Considere enviar requisições apenas quando uma mudança for necessária."]}]}`)
-	// var receipt zoomReceipt
-	// err = json.Unmarshal(resBody, &receipt)
-	// if err != nil {
-	// log.Fatalf("Error unmarshal zoom receipt. %v", err)
-	// }
-	// log.Printf("zoom receipt: %+v\n", receipt.Results[0].WarnMessages[0])
 }
 
 // Get zoom products to update.
@@ -433,12 +459,8 @@ func getProductsToUpdateZoomServer() (results []productZoom) {
 			}
 		}
 		results = append(results, prodZoom)
-		log.Printf("Product changed - %v, %v\n", prodZoom.ID, prodZunka.UpdatedAt)
+		log.Printf("Product changed. ID: %v, UpdatedAt: %v\n", prodZoom.ID, prodZunka.UpdatedAt)
 
-		// todo - comment.
-		// log.Println("")
-		// log.Printf("product: %v\n", prodZunka.UpdatedAt)
-		// log.Printf("temp   : %v\n", newestProductUpdatedAtTemp)
 		// Set newest updated time.
 		if prodZunka.UpdatedAt.After(newestProductUpdatedAtTemp) {
 			// log.Println("time updated")
