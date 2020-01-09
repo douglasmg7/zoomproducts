@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -37,7 +39,16 @@ var newestProductUpdatedAtTemp time.Time
 // Newest updated time product processed db param name.
 const NEWEST_PRODUCT_UPDATED_AT = "productsrv-newest-product-updated-at"
 
+// Brazil time location.
+var brLocation *time.Location
+
 func init() {
+	// Brazil location.
+	brLocation, err = time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		panic(err)
+	}
+
 	// Listern address.
 	address = ":8082"
 
@@ -66,6 +77,8 @@ func init() {
 	// Log configuration.
 	mw := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(mw)
+	// log.SetFlags(log.LstdFlags)
+	// log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetFlags(log.Ldate | log.Lmicroseconds)
 
 	// Run mode.
@@ -77,6 +90,17 @@ func init() {
 
 	// Log start.
 	log.Printf("** Starting productsrv in %v mode (version %s) **\n", mode, version)
+}
+
+func checkError(err error) bool {
+	if err != nil {
+		// notice that we're using 1, so it will actually log where
+		// the error happened, 0 = this function, we don't want that.
+		function, file, line, _ := runtime.Caller(1)
+		log.Printf("[error] [%s] [%s:%d] %v", filepath.Base(file), runtime.FuncForPC(function).Name(), line, err)
+		return true
+	}
+	return false
 }
 
 func main() {
@@ -260,7 +284,7 @@ func getNewestProductUpdatedAt() {
 	} else if err != nil {
 		log.Fatalf("Error. Could not retrive param %s from db. %v\n", NEWEST_PRODUCT_UPDATED_AT, err)
 	}
-	log.Println("Read productsrv-last-time-products-was-retrived-from-db: ", result.Value.Local())
+	log.Printf("Retrive %s from db: %v", NEWEST_PRODUCT_UPDATED_AT, result.Value.Local())
 	newestProductUpdatedAt = result.Value
 }
 
@@ -280,5 +304,5 @@ func updateNewestProductUpdatedAt() {
 	if err != nil {
 		log.Fatalf("Could not save %s into db.", NEWEST_PRODUCT_UPDATED_AT)
 	}
-	log.Printf("Saved %s into db: %v", NEWEST_PRODUCT_UPDATED_AT, newestProductUpdatedAt)
+	log.Printf("Saved %s into db: %v", NEWEST_PRODUCT_UPDATED_AT, newestProductUpdatedAt.In(brLocation))
 }
