@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -21,9 +21,11 @@ import (
 )
 
 const (
-	ZOOM_TICK_INTERVAL           = 3
-	ZOOM_TICKET_DEADLINE_SECONDS = 10
+	ZOOM_TICK_INTERVAL           = 10
+	ZOOM_TICKET_DEADLINE_SECONDS = 120.0
 )
+
+var muxUpdateZoomProducts sync.Mutex
 
 type productZunka struct {
 	ObjectID  primitive.ObjectID `bson:"_id,omitempty"`
@@ -89,7 +91,7 @@ type zoomReceipt struct {
 	Results          []zoomReceiptResult `json:"results"`
 }
 type zoomReceiptResult struct {
-	ProductId    string   `json:"product_id"`
+	ProductID    string   `json:"product_id"`
 	Status       int      `json:"status"`
 	Message      string   `json:"message"`
 	WarnMessages []string `json:"warning_messages"`
@@ -119,7 +121,7 @@ type zoomTicket struct {
 	TickCount  int // Number of ticks before get finish from zoom server.
 }
 type zoomTicketResult struct {
-	ProductId string `json:"product_id"`
+	ProductID string `json:"product_id"`
 	Status    int    `json:"status"`
 	Message   string `json:"message"`
 }
@@ -128,33 +130,42 @@ type zoomTicketResult struct {
 var zoomTickets map[string]*zoomTicket
 
 // Zoom tickets.
-var zoomTicker *time.Ticker
+// var zoomTicker *time.Ticker
 
-// Ticket deadline ticks.
-var zoomTicketDeadlineTicks = 100
+func checkZoomProductsConsistency() {
+	// log.Println(">> Begin checking zoom products consistency")
+	muxUpdateZoomProducts.Lock()
+	defer muxUpdateZoomProducts.Unlock()
 
-func init() {
-	zoomTicketDeadlineTicks = int(math.Ceil(float64(ZOOM_TICKET_DEADLINE_SECONDS) / ZOOM_TICK_INTERVAL))
-	// log.Println("ZOOM_TICKET_DEADLINE_TICKS:", zoomTicketDeadlineTicks)
+	log.Println(":: Checking zoom products consistency...")
+
+	// Clean zoom tickets.
+	zoomTickets = map[string]*zoomTicket{}
+
+	// Mock.
+	time.Sleep(20 * time.Second)
+	// log.Println(">> End zoom products consistency")
 }
 
 // Start zoom product update.
 func startZoomProductUpdate() {
 	zoomTickets = map[string]*zoomTicket{}
-	zoomTicker = time.NewTicker(time.Second * ZOOM_TICK_INTERVAL)
+	// zoomTicker = time.NewTicker(time.Second * ZOOM_TICK_INTERVAL)
 	for {
-		select {
-		case <-zoomTicker.C:
-			log.Println(":: Tick")
-			// updateOneZoomProduct()
-			updateManyZoomProducts()
-		}
+		time.Sleep(time.Second * ZOOM_TICK_INTERVAL)
+		updateManyZoomProducts()
+		// select {
+		// case <-zoomTicker.C:
+		// log.Println(":: Tick")
+		// // updateOneZoomProduct()
+		// updateManyZoomProducts()
+		// }
 	}
 }
 
 // Stop zoom product update.
 func stopZoomProductUpdate() {
-	zoomTicker.Stop()
+	// zoomTicker.Stop()
 	log.Println("Zoom update products stopped")
 }
 
@@ -206,6 +217,11 @@ func updateOneZoomProduct() {
 
 // Update zoom producs.
 func updateManyZoomProducts() {
+	// log.Println("** Start update")
+	muxUpdateZoomProducts.Lock()
+	defer muxUpdateZoomProducts.Unlock()
+
+	log.Println(":: Checking changed products...")
 	// Check if tickets fineshed.
 	checkZoomTicketsFinish()
 
@@ -221,6 +237,7 @@ func updateManyZoomProducts() {
 	if <-c == true && <-c == true {
 		updateNewestProductUpdatedAt()
 	}
+	// log.Println("** End update")
 }
 
 // Update zoom products at zoom server.
@@ -297,6 +314,7 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 	}
 
 	zoomTickets[ticket.ID] = &ticket
+	ticket.ReceivedAt = time.Now()
 	log.Printf("Ticket zoom added (update). ID: %v", ticket.ID)
 	c <- true
 }
@@ -382,6 +400,7 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 	}
 
 	zoomTickets[ticket.ID] = &ticket
+	ticket.ReceivedAt = time.Now()
 	log.Printf("Ticket zoom added (remove). ID: %v", ticket.ID)
 	c <- true
 }
@@ -389,16 +408,20 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 // Check if tickets finished.
 func checkZoomTicketsFinish() {
 	for k, v := range zoomTickets {
-		if v.TickCount > zoomTicketDeadlineTicks {
+		// Give up get ticket result and check zoom products consistency.
+		elapsedTimeInSeconds := time.Since(v.ReceivedAt).Seconds()
+		if elapsedTimeInSeconds > ZOOM_TICKET_DEADLINE_SECONDS {
 			delete(zoomTickets, k)
-			log.Println("v.ReceivedAt:", v.ReceivedAt)
-			log.Println("now:", time.Now())
-			log.Println("since", time.Since(v.ReceivedAt))
-			log.Printf("Removed zoom ticket ID %v (no answer from zoom server ater %d seconds).\n", v.ID, time.Since(v.ReceivedAt).Seconds)
-			continue
+			// log.Println("v.ReceivedAt:", v.ReceivedAt)
+			// log.Println("now:", time.Now())
+			// log.Println("since", time.Since(v.ReceivedAt))
+			log.Printf("Removed zoom ticket ID %v (no ticket result from zoom server ater %.1f s).\n", v.ID, elapsedTimeInSeconds)
+			// Check zoom products consistency.
+			go checkZoomProductsConsistency()
+			return
 		}
 		v.TickCount = v.TickCount + 1
-		log.Printf("Checking zoom ticket. ID: %v, TickCount: %d \n", v.ID, v.TickCount)
+		log.Printf("Checking zoom ticket. ID: %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
 		receipt, err := getZoomReceipt(k)
 		if err != nil {
 			log.Println(fmt.Sprintf("Error getting zoom ticket. %v\n.", err))
@@ -406,10 +429,17 @@ func checkZoomTicketsFinish() {
 		}
 		// Finished.
 		if receipt.Finished {
-			log.Printf("Ticket zoom finished. ID: %v, Receipt: %v\n", v.ID, receipt)
-			// for result := range receipt.Results {
-			// log.Printf("Ticket finished: %s, Result:%v\n", k, result)
-			// }
+			// log.Printf("Ticket zoom finished. ID: %v, Receipt: %v\n", v.ID, receipt)
+			log.Printf("Ticket zoom finished. ID: %v\n", v.ID)
+			for _, result := range receipt.Results {
+				// Product update failed.
+				log.Printf("    ProductID: %s, Status: %d, Message: %s\n", result.ProductID, result.Status, result.Message)
+				if result.Status != 200 && result.Status != 201 {
+					// Check zoom products consistency.
+					go checkZoomProductsConsistency()
+					return
+				}
+			}
 			delete(zoomTickets, k)
 		}
 	}
@@ -444,7 +474,7 @@ func getZoomProducts() {
 		return
 	}
 	// Log body result.
-	log.Printf("body: %s", string(resBody))
+	// log.Printf("body: %s", string(resBody))
 }
 
 // Get receipt information.
