@@ -54,17 +54,18 @@ type urlImageZoom struct {
 type productZoom struct {
 	ID string `json:"id"`
 	// SKU           string `json:"sku"`
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	Department    string   `json:"department"`
-	SubDepartment string   `json:"sub_department"`
-	EAN           string   `json:"ean"` // EAN – (European Article Number)
-	FreeShipping  string   `json:"free_shipping"`
-	BasePrice     string   `json:"base_price"` // Not used by marketplace
-	Price         string   `json:"price"`
-	Installments  struct { // Not used by marketplace
-		AmountMonths int    `json:"amount_months"`
-		Price        string `json:"price"` // Price by month
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Department    string `json:"department"`
+	SubDepartment string `json:"sub_department"`
+	EAN           string `json:"ean"` // EAN – (European Article Number)
+	// FreeShipping  string   `json:"free_shipping"`
+	FreeShipping bool     `json:"free_shipping"`
+	BasePrice    float64  `json:"base_price"` // Not used by marketplace
+	Price        float64  `json:"price"`
+	Installments struct { // Not used by marketplace
+		AmountMonths int     `json:"amount_months"`
+		Price        float64 `json:"price"` // Price by month
 	} `json:"installments"`
 	Quantity     int    `json:"quantity"`
 	Availability string `json:"availability"`
@@ -445,36 +446,67 @@ func checkZoomTicketsFinish() {
 	}
 }
 
-func getZoomProducts() {
+// func getZoomProducts() {
+func getZoomProducts() (products []productZoom, ok bool) {
 	// Request products.
 	client := &http.Client{}
 	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
 	// req, err := http.NewRequest("GET", "https://staging-merchant.zoom.com.br/api/merchant/products", nil)
 	req, err := http.NewRequest("GET", zoomHost()+"/products", nil)
+	if checkError(err) {
+		return products, false
+	}
 	req.Header.Set("Content-Type", "application/json")
-	checkFatalError(err)
 
-	// Devlopment.
-	// req.SetBasicAuth("zoomteste_zunka", "H2VA79Ug4fjFsJb")
 	req.SetBasicAuth(zoomUser(), zoomPass())
-	// Production.
-	// req.SetBasicAuth("zunka_informatica*", "h8VbfoRoMOSgZ2B")
 	res, err := client.Do(req)
-	checkFatalError(err)
-
-	defer res.Body.Close()
-	checkFatalError(err)
+	if checkError(err) {
+		return products, false
+	}
 
 	// Result.
+	defer res.Body.Close()
 	resBody, err := ioutil.ReadAll(res.Body)
-	checkFatalError(err)
+	if checkError(err) {
+		return products, false
+	}
+
 	// No 200 status.
 	if res.StatusCode != 200 {
-		log.Fatalf("Error getting products from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))
-		return
+		checkError(errors.New(fmt.Sprintf("Error getting products from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))))
+		return products, false
 	}
+
+	type PaginationType struct {
+		CurrentPage     int `json:"current_page"`
+		ProductsPerPage int `json:"products_per_page"`
+		TotalProducts   int `json:"total_products"`
+	}
+
+	result := struct {
+		Pagination PaginationType `json:"pagination"`
+		Products   []productZoom  `json:"products"`
+	}{
+		Pagination: PaginationType{},
+		// Products:   []productZoom{},
+		Products: products,
+	}
+
 	// Log body result.
 	// log.Printf("body: %s", string(resBody))
+
+	err = json.Unmarshal(resBody, &result)
+	if checkError(err) {
+		return products, false
+	}
+
+	if result.Pagination.TotalProducts >= 500 {
+		log.Println("[alert] Zoom products per page more than 500!")
+	}
+
+	// log.Printf("result: %v", result)
+
+	return result.Products, true
 }
 
 // Get receipt information.
@@ -596,19 +628,22 @@ func getZoomProductsChanged() (products []productZoom) {
 		prodZoom.Dimensions.Width = fmt.Sprintf("%.3f", float64(prodZunka.Width)/100)
 		prodZoom.Dimensions.Weight = strconv.Itoa(prodZunka.Weight)
 		// Free shipping.
-		prodZoom.FreeShipping = "false"
+		prodZoom.FreeShipping = false
+		// prodZoom.FreeShipping = "false"
 		// EAN.
 		if prodZunka.EAN == "" {
 			prodZunka.EAN = findEan(prodZunka.TechInfo)
 		}
 		prodZoom.EAN = prodZunka.EAN
 		// Price from.
-		prodZoom.Price = fmt.Sprintf("%.2f", prodZunka.Price)
+		// prodZoom.Price = fmt.Sprintf("%.2f", prodZunka.Price)
+		prodZoom.Price = prodZunka.Price
 		// prodZoom.Price = strings.ReplaceAll(prodZoom.Price, ".", ",")
 		prodZoom.BasePrice = prodZoom.Price
 		// Installments.
 		prodZoom.Installments.AmountMonths = 3
-		prodZoom.Installments.Price = fmt.Sprintf("%.2f", float64(int((prodZunka.Price/3)*100))/100)
+		// prodZoom.Installments.Price = fmt.Sprintf("%.2f", float64(int((prodZunka.Price/3)*100))/100)
+		prodZoom.Installments.Price = prodZunka.Price
 		prodZoom.Quantity = prodZunka.Quantity
 		prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
 		prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID

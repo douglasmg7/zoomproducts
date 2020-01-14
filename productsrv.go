@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -105,8 +106,14 @@ func checkError(err error) bool {
 
 func main() {
 	// // Test.
-	// getZoomProducts()
-	// return
+	products, ok := getZoomProducts()
+	if ok {
+		// log.Printf("Product 2: %+v", products[1])
+		b, err := json.MarshalIndent(products[1], "", "    ")
+		checkError(err)
+		log.Println("Products: ", string(b))
+	}
+	return
 
 	// Test.
 	// getZoomReceipt("4a00ea48-3cda-463f-978c-239deab2f09b")
