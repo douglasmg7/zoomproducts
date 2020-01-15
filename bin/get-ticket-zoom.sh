@@ -6,3 +6,5 @@ if [ -z "$1" ]
 fi
 
 curl -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/receipt/$1
+
+printf "\n"

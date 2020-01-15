@@ -82,6 +82,49 @@ type productZoom struct {
 	DeletedAt time.Time      `json:"-"`
 }
 
+// Specific for receive product from Zoom.
+type productZoomR struct {
+	ID string `json:"id"`
+	// SKU           string `json:"sku"`
+	Name string `json:"name"`
+	// Description   string `json:"description"`
+	// Department    string `json:"department"`
+	// SubDepartment string `json:"sub_department"`
+	// EAN           string `json:"ean"` // EAN – (European Article Number)
+	FreeShipping bool     `json:"free_shipping"`
+	BasePrice    float64  `json:"base_price"` // Not used by marketplace
+	Price        float64  `json:"price"`
+	Installments struct { // Not used by marketplace
+		AmountMonths int     `json:"amount_months"`
+		Price        float64 `json:"price"` // Price by month
+	} `json:"installments"`
+	Quantity int `json:"quantity"`
+	// Availability string `json:"availability"`
+	// Dimensions   struct {
+	// CrossDocking int    `json:"cross_docking"` // Days
+	// Height       string `json:"height"`        // M
+	// Length       string `json:"length"`        // M
+	// Width        string `json:"width"`         // M
+	// Weight       string `json:"weight"`        // KG
+	// } `json:"stock_info"`
+	// UrlImages []urlImageZoom `json:"url_images"`
+	Url    string `json:"url"`
+	Active bool   `json:"active"`
+}
+
+// To use with chan.
+type productZoomRAOk struct {
+	Products []productZoomR
+	Ok       bool
+}
+type productZunkaAOk struct {
+	Products []productZunka
+	Ok       bool
+}
+
+// "url_image":"https://i.zst.com.br/thumbs/49/3e/28/993091954.jpg",
+// "active":true},
+
 // To get zoom receipt information using the ticket number.
 type zoomReceipt struct {
 	// ticket           string    `json:"ticket"`
@@ -146,6 +189,27 @@ func checkZoomProductsConsistency() {
 	// Mock.
 	time.Sleep(20 * time.Second)
 	// log.Println(">> End zoom products consistency")
+
+	// Test.
+	products, ok := getZoomProducts()
+	if ok {
+		// log.Printf("Product 2: %+v", products[1])
+		// S2716DG
+		log.Printf("Products[8]: %+v", products[8])
+		b, err := json.MarshalIndent(products[8], "", "    ")
+		checkError(err)
+		// log.Println("Products all: ", products)
+		log.Println("Product: ", string(b))
+	}
+	return
+
+	// To check
+	// "name": "Monitor gamer Dell S2716DG",
+	// "price": 2490.83,
+	// "url": "https://www.zunka.com.br/product/5c19eab2fbed5f0a1c19dcc8",
+	// "free_shipping": false,
+	// "quantity": 12,
+	// "active": true
 }
 
 // Start zoom product update.
@@ -264,14 +328,15 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 	}
 
 	// Log request.
-	// zoomProductsJSONPretty, err := json.MarshalIndent(p, "", "    ")
-	// log.Println("zoomProductsJSONPretty:", string(zoomProductsJSONPretty))
+	zoomProductsJSONPretty, err := json.MarshalIndent(p, "", "    ")
+	log.Println("zoomProductsJSONPretty:", string(zoomProductsJSONPretty))
 
 	zoomProductsJSON, err := json.Marshal(p)
 	if checkError(err) {
 		c <- false
 		return
 	}
+	// log.Println("zoomProductsJSON:", string(zoomProductsJSON))
 
 	// Request products.
 	client := &http.Client{}
@@ -446,8 +511,7 @@ func checkZoomTicketsFinish() {
 	}
 }
 
-// func getZoomProducts() {
-func getZoomProducts() (products []productZoom, ok bool) {
+func getZoomProducts() (products []productZoomR, ok bool) {
 	// Request products.
 	client := &http.Client{}
 	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
@@ -470,6 +534,7 @@ func getZoomProducts() (products []productZoom, ok bool) {
 	if checkError(err) {
 		return products, false
 	}
+	// log.Printf("Products: %s", string(resBody))
 
 	// No 200 status.
 	if res.StatusCode != 200 {
@@ -485,7 +550,7 @@ func getZoomProducts() (products []productZoom, ok bool) {
 
 	result := struct {
 		Pagination PaginationType `json:"pagination"`
-		Products   []productZoom  `json:"products"`
+		Products   []productZoomR `json:"products"`
 	}{
 		Pagination: PaginationType{},
 		// Products:   []productZoom{},
@@ -682,3 +747,34 @@ func findEan(s string) string {
 	}
 	return ""
 }
+
+// type productZoom struct {
+// ID string `json:"id"`
+// // SKU           string `json:"sku"`
+// Name          string `json:"name"`
+// Description   string `json:"description"`
+// Department    string `json:"department"`
+// SubDepartment string `json:"sub_department"`
+// EAN           string `json:"ean"` // EAN – (European Article Number)
+// // FreeShipping  string   `json:"free_shipping"`
+// FreeShipping bool     `json:"free_shipping"`
+// BasePrice    float64  `json:"base_price"` // Not used by marketplace
+// Price        float64  `json:"price"`
+// Installments struct { // Not used by marketplace
+// AmountMonths int     `json:"amount_months"`
+// Price        float64 `json:"price"` // Price by month
+// } `json:"installments"`
+// Quantity     int    `json:"quantity"`
+// Availability string `json:"availability"`
+// Dimensions   struct {
+// CrossDocking int    `json:"cross_docking"` // Days
+// Height       string `json:"height"`        // M
+// Length       string `json:"length"`        // M
+// Width        string `json:"width"`         // M
+// Weight       string `json:"weight"`        // KG
+// } `json:"stock_info"`
+// UrlImages []urlImageZoom `json:"url_images"`
+// Url       string         `json:"url"`
+// UpdatedAt time.Time      `json:"-"`
+// DeletedAt time.Time      `json:"-"`
+// }

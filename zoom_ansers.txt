@@ -1,0 +1,5 @@
+get products url
+    base_price e installments não estão sendo atualizados
+    stock_info e outros não estão sendo recebidos
+
+get product url não está funcionando.

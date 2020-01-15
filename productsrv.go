@@ -106,14 +106,17 @@ func checkError(err error) bool {
 
 func main() {
 	// // Test.
-	products, ok := getZoomProducts()
-	if ok {
-		// log.Printf("Product 2: %+v", products[1])
-		b, err := json.MarshalIndent(products[1], "", "    ")
-		checkError(err)
-		log.Println("Products: ", string(b))
-	}
-	return
+	// products, ok := getZoomProducts()
+	// if ok {
+	// // log.Printf("Product 2: %+v", products[1])
+	// // S2716DG
+	// log.Printf("Products[8]: %+v", products[8])
+	// b, err := json.MarshalIndent(products[8], "", "    ")
+	// checkError(err)
+	// // log.Println("Products all: ", products)
+	// log.Println("Product: ", string(b))
+	// }
+	// return
 
 	// Test.
 	// getZoomReceipt("4a00ea48-3cda-463f-978c-239deab2f09b")
