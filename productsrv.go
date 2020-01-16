@@ -124,7 +124,6 @@ func main() {
 
 	// todo - comment.
 	checkZoomProductsConsistency()
-	log.Println("End")
 	return
 
 	// Init router.

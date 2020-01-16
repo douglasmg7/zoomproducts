@@ -82,6 +82,22 @@ type productZoom struct {
 	DeletedAt time.Time      `json:"-"`
 }
 
+// Check if product received is equal.
+func (p *productZoom) Equal(pr *productZoomR) bool {
+	if pr.ID == p.ID &&
+		pr.FreeShipping == p.FreeShipping &&
+		// pr.BasePrice == p.BasePrice &&
+		pr.Price == p.Price &&
+		// pr.Installments.AmountMonths == p.Installments.AmountMonths &&
+		// pr.Installments.Price == p.Installments.Price &&
+		pr.Quantity == p.Quantity &&
+		pr.Url == p.Url {
+
+		return true
+	}
+	return false
+}
+
 // Specific for receive product from Zoom.
 type productZoomR struct {
 	ID string `json:"id"`
@@ -189,27 +205,62 @@ func checkZoomProductsConsistency() {
 	zoomTickets = map[string]*zoomTicket{}
 
 	log.Println("Calling getZoomProducts")
+	go getZoomProducts(cZoomR)
 	go getAllZunkaProducts(cZoomDb)
 
-	prodZoomDBAOk := <-cZoomDb
-	if prodZoomDBAOk.Ok {
-		for _, prod := range *prodZoomDBAOk.Products {
-			log.Printf("ID: %s, Active: %v", prod.ID, prod.Availability)
+	prodZoomDBAOk, prodZoomRAOK := <-cZoomDb, <-cZoomR
+
+	if prodZoomDBAOk.Ok && prodZoomRAOK.Ok {
+		log.Printf("Zunka products count: %v", len(*prodZoomDBAOk.Products))
+		log.Printf("Zoom Products count: %v", len(*prodZoomRAOK.Products))
+
+		productsToUpdate := []productZoom{}
+		productsToRemove := []productZoom{}
+
+		// Check if product is exist and equal.
+		for _, prodDB := range *prodZoomDBAOk.Products {
+			productExistAndEqual := false
+			for _, prodR := range *prodZoomRAOK.Products {
+				// Product exist on zoom server and equal.
+				// Active false means product removed.
+				if prodDB.ID == prodR.ID && prodR.Active == true {
+					productExistAndEqual = prodDB.Equal(&prodR)
+					break
+				}
+			}
+			if !productExistAndEqual {
+				productsToUpdate = append(productsToUpdate, prodDB)
+
+			}
 		}
-	}
 
-	return
+		// Check if product was deleted on zunka server.
+		for _, prodR := range *prodZoomRAOK.Products {
+			// Product considered as removed on zoom server when active is false.
+			if !prodR.Active {
+				continue
+			}
+			// for _, prodR := range *prodZoomRAOK.Products {
+			// // Product exist on zoom server and equal.
+			// // Active false means product removed.
+			// if prodDB.ID == prodR.ID && prodR.Active == true {
+			// productExistAndEqual = prodDB.Equal(&prodR)
+			// break
+			// }
+			// }
+			// if !productExistAndEqual {
+			// productsToUpdate = append(productsToUpdate, prodDB)
 
-	go getZoomProducts(cZoomR)
-	prodZoomRAOK := <-cZoomR
+			// }
+		}
 
-	if prodZoomRAOK.Ok {
+		log.Printf("Products to update: %+v\n", productsToUpdate)
+		log.Printf("Products to delete: %+v\n", productsToRemove)
 		// log.Println("Count products:", len(*prodZoomRAOK.Products))
-		// log.Printf("Products: %+v", *prodZoomRAOK.Products)
 
-		for _, prod := range *prodZoomRAOK.Products {
-			log.Printf("ID: %s, Active: %v", prod.ID, prod.Active)
-		}
+		// for _, prod := range *prodZoomRAOK.Products {
+		// log.Printf("ID: %s, Active: %v", prod.ID, prod.Active)
+		// }
 
 		// // log.Printf("Product 2: %+v", products[1])
 		// // S2716DG
@@ -222,15 +273,6 @@ func checkZoomProductsConsistency() {
 		// log.Println("Product: ", string(b))
 	}
 
-	return
-
-	// To check
-	// "name": "Monitor gamer Dell S2716DG",
-	// "price": 2490.83,
-	// "url": "https://www.zunka.com.br/product/5c19eab2fbed5f0a1c19dcc8",
-	// "free_shipping": false,
-	// "quantity": 12,
-	// "active": true
 }
 
 // Start zoom product update.
@@ -773,10 +815,11 @@ func getChangedZunkaProducts() (products []productZoom) {
 
 // Get all Zunka products.
 func getAllZunkaProducts(c chan productZoomAOk) {
-	result := productZoomAOk{}
-	log.Println("Before collection")
+	result := productZoomAOk{
+		Ok:       false,
+		Products: &[]productZoom{},
+	}
 	collection := client.Database("zunka").Collection("products")
-	log.Println("After collection")
 
 	ctxFind, _ := context.WithTimeout(context.Background(), 3*time.Second)
 	// D: A BSON document. This type should be used in situations where order matters, such as MongoDB commands.
@@ -837,16 +880,21 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 		}
 
 		prodZoom := convertProductZunkaToZoom(&prodZunka)
+		// log.Printf("prodZoom.ID: %+v\n", prodZoom.ID)
 		*result.Products = append(*result.Products, *prodZoom)
 	}
 	if err := cur.Err(); err != nil {
 		log.Fatal(err)
 	}
+	// log.Printf("Products count: %v\n", len(*result.Products))
+
+	result.Ok = true
 	c <- result
 }
 
 // Convert Zunka product to Zoom product.
 func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) {
+	prodZoom = &productZoom{}
 	// ID.
 	prodZoom.ID = prodZunka.ObjectID.Hex()
 	// Name.
