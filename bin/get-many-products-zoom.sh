@@ -10,5 +10,6 @@ RES=$(curl -s -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application
 
 # echo $RES | jq -r .products
 # echo $RES | jq -r '.products | .[0]'
-echo $RES | jq -r '.products | .[] | select(.id == "123459789")'
+# echo $RES | jq -r '.products | .[] | select(.id == "123459789")'
+echo $RES | jq -r '.products | .[]'
 	# jq '.[] | select(.id == "second")'

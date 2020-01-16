@@ -114,11 +114,11 @@ type productZoomR struct {
 
 // To use with chan.
 type productZoomRAOk struct {
-	Products []productZoomR
+	Products *[]productZoomR
 	Ok       bool
 }
 type productZunkaAOk struct {
-	Products []productZunka
+	Products *[]productZunka
 	Ok       bool
 }
 
@@ -177,7 +177,8 @@ var zoomTickets map[string]*zoomTicket
 // var zoomTicker *time.Ticker
 
 func checkZoomProductsConsistency() {
-	// log.Println(">> Begin checking zoom products consistency")
+	c := make(chan productZoomRAOk)
+
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
@@ -186,20 +187,23 @@ func checkZoomProductsConsistency() {
 	// Clean zoom tickets.
 	zoomTickets = map[string]*zoomTicket{}
 
-	// Mock.
-	time.Sleep(20 * time.Second)
-	// log.Println(">> End zoom products consistency")
+	log.Println("Calling getZoomProducts")
+	go getZoomProducts(c)
 
-	// Test.
-	products, ok := getZoomProducts()
-	if ok {
-		// log.Printf("Product 2: %+v", products[1])
-		// S2716DG
-		log.Printf("Products[8]: %+v", products[8])
-		b, err := json.MarshalIndent(products[8], "", "    ")
-		checkError(err)
-		// log.Println("Products all: ", products)
-		log.Println("Product: ", string(b))
+	prodZoomRAOK := <-c
+	if prodZoomRAOK.Ok {
+		log.Println("Count products:", len(*prodZoomRAOK.Products))
+		log.Println("Products:", *prodZoomRAOK.Products)
+
+		// // log.Printf("Product 2: %+v", products[1])
+		// // S2716DG
+		// // log.Printf("Products[8]: %+v", prodZoomRAOK.Products[8])
+
+		// b, err := json.MarshalIndent(prodZoomRAOK.Products[8], "", "    ")
+		// checkError(err)
+
+		// // log.Println("Products all: ", products)
+		// log.Println("Product: ", string(b))
 	}
 	return
 
@@ -511,36 +515,8 @@ func checkZoomTicketsFinish() {
 	}
 }
 
-func getZoomProducts() (products []productZoomR, ok bool) {
-	// Request products.
-	client := &http.Client{}
-	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
-	// req, err := http.NewRequest("GET", "https://staging-merchant.zoom.com.br/api/merchant/products", nil)
-	req, err := http.NewRequest("GET", zoomHost()+"/products", nil)
-	if checkError(err) {
-		return products, false
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	req.SetBasicAuth(zoomUser(), zoomPass())
-	res, err := client.Do(req)
-	if checkError(err) {
-		return products, false
-	}
-
-	// Result.
-	defer res.Body.Close()
-	resBody, err := ioutil.ReadAll(res.Body)
-	if checkError(err) {
-		return products, false
-	}
-	// log.Printf("Products: %s", string(resBody))
-
-	// No 200 status.
-	if res.StatusCode != 200 {
-		checkError(errors.New(fmt.Sprintf("Error getting products from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))))
-		return products, false
-	}
+// Get products from zoom webservice.
+func getZoomProducts(c chan productZoomRAOk) {
 
 	type PaginationType struct {
 		CurrentPage     int `json:"current_page"`
@@ -548,30 +524,70 @@ func getZoomProducts() (products []productZoomR, ok bool) {
 		TotalProducts   int `json:"total_products"`
 	}
 
-	result := struct {
+	pageProducts := struct {
 		Pagination PaginationType `json:"pagination"`
 		Products   []productZoomR `json:"products"`
 	}{
 		Pagination: PaginationType{},
-		// Products:   []productZoom{},
-		Products: products,
+		Products:   []productZoomR{},
 	}
 
-	// Log body result.
+	result := productZoomRAOk{
+		Ok:       false,
+		Products: &pageProducts.Products,
+	}
+
+	// Request products.
+	client := &http.Client{}
+	// req, err := http.NewRequest("GET", "http://merchant.zoom.com.br/api/merchant/products", nil)
+	// req, err := http.NewRequest("GET", "https://staging-merchant.zoom.com.br/api/merchant/products", nil)
+	req, err := http.NewRequest("GET", zoomHost()+"/products", nil)
+	if checkError(err) {
+		c <- result
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	req.SetBasicAuth(zoomUser(), zoomPass())
+	res, err := client.Do(req)
+	if checkError(err) {
+		c <- result
+		return
+	}
+
+	// Result.
+	defer res.Body.Close()
+	resBody, err := ioutil.ReadAll(res.Body)
+	if checkError(err) {
+		c <- result
+		return
+	}
+	log.Printf("Page and products: %s", string(resBody))
+
+	// No 200 status.
+	if res.StatusCode != 200 {
+		checkError(errors.New(fmt.Sprintf("Error getting products from zoom server.\n\nstatus: %v\n\nbody: %v", res.StatusCode, string(resBody))))
+		c <- result
+		return
+	}
+
+	// Log body pageResult.
 	// log.Printf("body: %s", string(resBody))
 
-	err = json.Unmarshal(resBody, &result)
+	err = json.Unmarshal(resBody, &pageProducts)
 	if checkError(err) {
-		return products, false
+		c <- result
+		return
 	}
 
-	if result.Pagination.TotalProducts >= 500 {
+	if pageProducts.Pagination.TotalProducts >= 500 {
 		log.Println("[alert] Zoom products per page more than 500!")
 	}
 
-	// log.Printf("result: %v", result)
+	// log.Printf("pageResult: %v", pageResult)
 
-	return result.Products, true
+	result.Ok = true
+	c <- result
 }
 
 // Get receipt information.
