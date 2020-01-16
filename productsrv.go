@@ -104,11 +104,6 @@ func checkError(err error) bool {
 }
 
 func main() {
-
-	checkZoomProductsConsistency()
-	log.Println("End")
-	return
-
 	// MongoDB config.
 	client, err = mongo.NewClient(options.Client().ApplyURI(zunkaSiteMongoDBConnectionString))
 
@@ -126,6 +121,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error. Could not ping mongodb. %v\n", err)
 	}
+
+	// todo - comment.
+	checkZoomProductsConsistency()
+	log.Println("End")
+	return
 
 	// Init router.
 	router := httprouter.New()

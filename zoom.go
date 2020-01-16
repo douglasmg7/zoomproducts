@@ -117,8 +117,8 @@ type productZoomRAOk struct {
 	Products *[]productZoomR
 	Ok       bool
 }
-type productZunkaAOk struct {
-	Products *[]productZunka
+type productZoomAOk struct {
+	Products *[]productZoom
 	Ok       bool
 }
 
@@ -177,7 +177,8 @@ var zoomTickets map[string]*zoomTicket
 // var zoomTicker *time.Ticker
 
 func checkZoomProductsConsistency() {
-	c := make(chan productZoomRAOk)
+	cZoomR := make(chan productZoomRAOk)
+	cZoomDb := make(chan productZoomAOk)
 
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
@@ -188,12 +189,27 @@ func checkZoomProductsConsistency() {
 	zoomTickets = map[string]*zoomTicket{}
 
 	log.Println("Calling getZoomProducts")
-	go getZoomProducts(c)
+	go getAllZunkaProducts(cZoomDb)
 
-	prodZoomRAOK := <-c
+	prodZoomDBAOk := <-cZoomDb
+	if prodZoomDBAOk.Ok {
+		for _, prod := range *prodZoomDBAOk.Products {
+			log.Printf("ID: %s, Active: %v", prod.ID, prod.Availability)
+		}
+	}
+
+	return
+
+	go getZoomProducts(cZoomR)
+	prodZoomRAOK := <-cZoomR
+
 	if prodZoomRAOK.Ok {
-		log.Println("Count products:", len(*prodZoomRAOK.Products))
-		log.Println("Products:", *prodZoomRAOK.Products)
+		// log.Println("Count products:", len(*prodZoomRAOK.Products))
+		// log.Printf("Products: %+v", *prodZoomRAOK.Products)
+
+		for _, prod := range *prodZoomRAOK.Products {
+			log.Printf("ID: %s, Active: %v", prod.ID, prod.Active)
+		}
 
 		// // log.Printf("Product 2: %+v", products[1])
 		// // S2716DG
@@ -205,6 +221,7 @@ func checkZoomProductsConsistency() {
 		// // log.Println("Products all: ", products)
 		// log.Println("Product: ", string(b))
 	}
+
 	return
 
 	// To check
@@ -241,7 +258,7 @@ func stopZoomProductUpdate() {
 // Update zoom product.
 func updateOneZoomProduct() {
 
-	// zoomProducts :=  getZoomProductsChanged()
+	// zoomProducts :=  getChangedZunkaProducts()
 	// if len(zoomProducts) == 0 {
 	// return
 	// }
@@ -295,7 +312,7 @@ func updateManyZoomProducts() {
 	checkZoomTicketsFinish()
 
 	// Get zoom products changed.
-	zoomProd := getZoomProductsChanged()
+	zoomProd := getChangedZunkaProducts()
 
 	c := make(chan bool)
 
@@ -562,7 +579,7 @@ func getZoomProducts(c chan productZoomRAOk) {
 		c <- result
 		return
 	}
-	log.Printf("Page and products: %s", string(resBody))
+	// log.Printf("Page and products: %s", string(resBody))
 
 	// No 200 status.
 	if res.StatusCode != 200 {
@@ -632,8 +649,11 @@ func getZoomReceipt(ticketId string) (receipt zoomReceipt, err error) {
 	return receipt, nil
 }
 
-// Get zoom products changed.
-func getZoomProductsChanged() (products []productZoom) {
+/******************************************************************************
+* ZUNKA PRODUCTS
+******************************************************************************/
+// Get Zunka products changed.
+func getChangedZunkaProducts() (products []productZoom) {
 	// To save the new one when finish.
 	newestProductUpdatedAtTemp = newestProductUpdatedAt
 
@@ -751,6 +771,136 @@ func getZoomProductsChanged() (products []productZoom) {
 	return products
 }
 
+// Get all Zunka products.
+func getAllZunkaProducts(c chan productZoomAOk) {
+	result := productZoomAOk{}
+	log.Println("Before collection")
+	collection := client.Database("zunka").Collection("products")
+	log.Println("After collection")
+
+	ctxFind, _ := context.WithTimeout(context.Background(), 3*time.Second)
+	// D: A BSON document. This type should be used in situations where order matters, such as MongoDB commands.
+	// M: An unordered map. It is the same as D, except it does not preserve order.
+	// A: A BSON array.
+	// E: A single element inside a D.
+	// options.Find().SetProjection(bson.D{{"storeProductTitle", true}, {"_id", false}}),
+	// {'storeProductCommercialize': true, 'storeProductTitle': {$regex: /\S/}, 'storeProductQtd': {$gt: 0}, 'storeProductPrice': {$gt: 0}};
+	filter := bson.D{
+		// {"storeProductCommercialize", true},
+		// {"storeProductQtd", bson.D{
+		// {"$gt", 0},
+		// }},
+		{"storeProductPrice", bson.D{
+			{"$gt", 0},
+		}},
+		{"storeProductTitle", bson.D{
+			{"$regex", `\S`},
+		}},
+		// {"updatedAt", bson.D{
+		// {"$gt", newestProductUpdatedAt},
+		// }},
+	}
+	findOptions := options.Find()
+	findOptions.SetProjection(bson.D{
+		{"_id", true},
+		{"storeProductTitle", true},
+		{"storeProductCategory", true},
+		{"storeProductDetail", true},
+		{"storeProductTechnicalInformation", true}, // To get EAN if not have EAN.
+		{"storeProductLength", true},
+		{"storeProductHeight", true},
+		{"storeProductWidth", true},
+		{"storeProductWeight", true},
+		{"storeProductActive", true},
+		{"storeProductPrice", true},
+		{"storeProductQtd", true},
+		{"ean", true},
+		{"images", true},
+		{"updatedAt", true},
+		{"deletedAt", true},
+	})
+	// todo - comment.
+	// findOptions.SetLimit(12)
+	cur, err := collection.Find(ctxFind, filter, findOptions)
+	if checkError(err) {
+		c <- result
+		return
+	}
+
+	defer cur.Close(ctxFind)
+	for cur.Next(ctxFind) {
+		prodZunka := productZunka{}
+		err := cur.Decode(&prodZunka)
+		if checkError(err) {
+			c <- result
+			return
+		}
+
+		prodZoom := convertProductZunkaToZoom(&prodZunka)
+		*result.Products = append(*result.Products, *prodZoom)
+	}
+	if err := cur.Err(); err != nil {
+		log.Fatal(err)
+	}
+	c <- result
+}
+
+// Convert Zunka product to Zoom product.
+func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) {
+	// ID.
+	prodZoom.ID = prodZunka.ObjectID.Hex()
+	// Name.
+	prodZoom.Name = prodZunka.Name
+	// Description.
+	prodZoom.Description = prodZunka.Detail
+	// Department.
+	prodZoom.Department = "Informática"
+	// Sub department.
+	prodZoom.SubDepartment = prodZunka.Category
+	// Dimensions.
+	prodZoom.Dimensions.CrossDocking = 2 // ?
+	prodZoom.Dimensions.Length = fmt.Sprintf("%.3f", float64(prodZunka.Length)/100)
+	prodZoom.Dimensions.Height = fmt.Sprintf("%.3f", float64(prodZunka.Height)/100)
+	prodZoom.Dimensions.Width = fmt.Sprintf("%.3f", float64(prodZunka.Width)/100)
+	prodZoom.Dimensions.Weight = strconv.Itoa(prodZunka.Weight)
+	// Free shipping.
+	prodZoom.FreeShipping = false
+	// prodZoom.FreeShipping = "false"
+	// EAN.
+	if prodZunka.EAN == "" {
+		prodZunka.EAN = findEan(prodZunka.TechInfo)
+	}
+	prodZoom.EAN = prodZunka.EAN
+	// Price from.
+	// prodZoom.Price = fmt.Sprintf("%.2f", prodZunka.Price)
+	prodZoom.Price = prodZunka.Price
+	// prodZoom.Price = strings.ReplaceAll(prodZoom.Price, ".", ",")
+	prodZoom.BasePrice = prodZoom.Price
+	// Installments.
+	prodZoom.Installments.AmountMonths = 3
+	// prodZoom.Installments.Price = fmt.Sprintf("%.2f", float64(int((prodZunka.Price/3)*100))/100)
+	prodZoom.Installments.Price = prodZunka.Price
+	prodZoom.Quantity = prodZunka.Quantity
+	prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
+	prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
+	// Images.
+	for index, urlImage := range prodZunka.Images {
+		if index == 0 {
+			prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{"true", "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
+		} else {
+			prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{"false", "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
+		}
+	}
+	prodZoom.UpdatedAt = prodZunka.UpdatedAt
+	prodZoom.DeletedAt = prodZunka.DeletedAt
+	// Set newest updated time.
+	if prodZunka.UpdatedAt.After(newestProductUpdatedAtTemp) {
+		// log.Println("time updated")
+		newestProductUpdatedAtTemp = prodZunka.UpdatedAt
+	}
+	return prodZoom
+}
+
 // Find EAN from string.
 func findEan(s string) string {
 	lines := strings.Split(s, "\n")
@@ -763,34 +913,3 @@ func findEan(s string) string {
 	}
 	return ""
 }
-
-// type productZoom struct {
-// ID string `json:"id"`
-// // SKU           string `json:"sku"`
-// Name          string `json:"name"`
-// Description   string `json:"description"`
-// Department    string `json:"department"`
-// SubDepartment string `json:"sub_department"`
-// EAN           string `json:"ean"` // EAN – (European Article Number)
-// // FreeShipping  string   `json:"free_shipping"`
-// FreeShipping bool     `json:"free_shipping"`
-// BasePrice    float64  `json:"base_price"` // Not used by marketplace
-// Price        float64  `json:"price"`
-// Installments struct { // Not used by marketplace
-// AmountMonths int     `json:"amount_months"`
-// Price        float64 `json:"price"` // Price by month
-// } `json:"installments"`
-// Quantity     int    `json:"quantity"`
-// Availability string `json:"availability"`
-// Dimensions   struct {
-// CrossDocking int    `json:"cross_docking"` // Days
-// Height       string `json:"height"`        // M
-// Length       string `json:"length"`        // M
-// Width        string `json:"width"`         // M
-// Weight       string `json:"weight"`        // KG
-// } `json:"stock_info"`
-// UrlImages []urlImageZoom `json:"url_images"`
-// Url       string         `json:"url"`
-// UpdatedAt time.Time      `json:"-"`
-// DeletedAt time.Time      `json:"-"`
-// }
