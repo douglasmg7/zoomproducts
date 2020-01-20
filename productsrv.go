@@ -122,9 +122,9 @@ func main() {
 		log.Fatalf("Error. Could not ping mongodb. %v\n", err)
 	}
 
-	// todo - comment.
-	checkZoomProductsConsistency()
-	return
+	// // todo - comment.
+	// checkZoomProductsConsistency()
+	// return
 
 	// Init router.
 	router := httprouter.New()
@@ -132,6 +132,7 @@ func main() {
 
 	getNewestProductUpdatedAt()
 	go startZoomProductUpdate()
+	time.AfterFunc(time.Minute*TIME_TO_CALL_CHECK_CONCISTENCY_AFTER_START_MIN, checkZoomProductsConsistency)
 
 	// Create server.
 	server := &http.Server{

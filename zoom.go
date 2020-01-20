@@ -21,29 +21,31 @@ import (
 )
 
 const (
-	ZOOM_TICK_INTERVAL           = 10
-	ZOOM_TICKET_DEADLINE_SECONDS = 120.0
+	ZOOM_TICK_INTERVAL                             = 30
+	ZOOM_TICKET_DEADLINE_SECONDS                   = 600.0
+	TIME_TO_CALL_CHECK_CONCISTENCY_AFTER_START_MIN = 5
+	TIME_TO_CALL_CHECK_CONCISTENCY_AGAIN_MIN       = 10
 )
 
 var muxUpdateZoomProducts sync.Mutex
 
 type productZunka struct {
-	ObjectID  primitive.ObjectID `bson:"_id,omitempty"`
-	Name      string             `bson:"storeProductTitle" xml:"NOME"`
-	Category  string             `bson:"storeProductCategory"`
-	Detail    string             `bson:"storeProductDetail"`
-	TechInfo  string             `bson:"storeProductTechnicalInformation"` // To get get ean.
-	Price     float64            `bson:"storeProductPrice"`
-	EAN       string             `bson:"ean"` // EAN – (European Article Number)
-	Length    int                `bson:"storeProductLength"`
-	Height    int                `bson:"storeProductHeight"`
-	Width     int                `bson:"storeProductWidth"`
-	Weight    int                `bson:"storeProductWeight"`
-	Quantity  int                `bson:"storeProductQtd"`
-	Active    bool               `bson:"storeProductActive"`
-	Images    []string           `bson:"images"`
-	UpdatedAt time.Time          `bson:"updatedAt"`
-	DeletedAt time.Time          `bson:"deletedAt"`
+	ObjectID      primitive.ObjectID `bson:"_id,omitempty"`
+	Name          string             `bson:"storeProductTitle" xml:"NOME"`
+	Category      string             `bson:"storeProductCategory"`
+	Detail        string             `bson:"storeProductDetail"`
+	TechInfo      string             `bson:"storeProductTechnicalInformation"` // To get get ean.
+	Price         float64            `bson:"storeProductPrice"`
+	EAN           string             `bson:"ean"` // EAN – (European Article Number)
+	Length        int                `bson:"storeProductLength"`
+	Height        int                `bson:"storeProductHeight"`
+	Width         int                `bson:"storeProductWidth"`
+	Weight        int                `bson:"storeProductWeight"`
+	Quantity      int                `bson:"storeProductQtd"`
+	Commercialize bool               `bson:"storeProductCommercialize"`
+	Images        []string           `bson:"images"`
+	UpdatedAt     time.Time          `bson:"updatedAt"`
+	DeletedAt     time.Time          `bson:"deletedAt"`
 }
 
 type urlImageZoom struct {
@@ -67,9 +69,10 @@ type productZoom struct {
 		AmountMonths int     `json:"amount_months"`
 		Price        float64 `json:"price"` // Price by month
 	} `json:"installments"`
-	Quantity     int    `json:"quantity"`
-	Availability string `json:"availability"`
-	Dimensions   struct {
+	Quantity     int  `json:"quantity"`
+	Availability bool `json:"availability"`
+	// Availability string `json:"availability"`
+	Dimensions struct {
 		CrossDocking int    `json:"cross_docking"` // Days
 		Height       string `json:"height"`        // M
 		Length       string `json:"length"`        // M
@@ -91,7 +94,8 @@ func (p *productZoom) Equal(pr *productZoomR) bool {
 		// pr.Installments.AmountMonths == p.Installments.AmountMonths &&
 		// pr.Installments.Price == p.Installments.Price &&
 		pr.Quantity == p.Quantity &&
-		pr.Url == p.Url {
+		pr.Url == p.Url &&
+		pr.Active == p.Availability {
 
 		return true
 	}
@@ -204,7 +208,6 @@ func checkZoomProductsConsistency() {
 	// Clean zoom tickets.
 	zoomTickets = map[string]*zoomTicket{}
 
-	log.Println("Calling getZoomProducts")
 	go getZoomProducts(cZoomR)
 	go getAllZunkaProducts(cZoomDb)
 
@@ -217,7 +220,7 @@ func checkZoomProductsConsistency() {
 		productsToUpdate := []productZoom{}
 		productsToRemove := []productZoom{}
 
-		// Check if product is exist and equal.
+		// Check if product exist and equal.
 		for _, prodDB := range *prodZoomDBAOk.Products {
 			productExistAndEqual := false
 			for _, prodR := range *prodZoomRAOK.Products {
@@ -240,39 +243,42 @@ func checkZoomProductsConsistency() {
 			if !prodR.Active {
 				continue
 			}
-			// for _, prodR := range *prodZoomRAOK.Products {
-			// // Product exist on zoom server and equal.
-			// // Active false means product removed.
-			// if prodDB.ID == prodR.ID && prodR.Active == true {
-			// productExistAndEqual = prodDB.Equal(&prodR)
-			// break
-			// }
-			// }
-			// if !productExistAndEqual {
-			// productsToUpdate = append(productsToUpdate, prodDB)
-
-			// }
+			for _, prodDB := range *prodZoomDBAOk.Products {
+				// Product deleted.
+				if prodDB.ID == prodR.ID && !prodDB.DeletedAt.IsZero() {
+					productsToRemove = append(productsToRemove, prodDB)
+					break
+				}
+			}
 		}
 
-		log.Printf("Products to update: %+v\n", productsToUpdate)
-		log.Printf("Products to delete: %+v\n", productsToRemove)
-		// log.Println("Count products:", len(*prodZoomRAOK.Products))
-
-		// for _, prod := range *prodZoomRAOK.Products {
-		// log.Printf("ID: %s, Active: %v", prod.ID, prod.Active)
+		log.Printf("Quantity of products to update: %+v\n", len(productsToUpdate))
+		// for _, prod := range productsToUpdate {
+		// log.Printf("ID: %v", prod.ID)
+		// }
+		log.Printf("Quantity of products to delete: %+v\n", len(productsToRemove))
+		// for _, prod := range productsToRemove {
+		// log.Printf("ID: %v", prod.ID)
 		// }
 
-		// // log.Printf("Product 2: %+v", products[1])
-		// // S2716DG
-		// // log.Printf("Products[8]: %+v", prodZoomRAOK.Products[8])
+		// c := make(chan bool)
+
+		// go updateZoomProducts(productsToUpdate, c)
+		// go removeZoomProducts(productsToRemove, c)
+
+		// // Newest updatedAt product time.
+		// if <-c == true && <-c == true {
+		// log.Println("Zoom products consistency check finished.")
+		// }
 
 		// b, err := json.MarshalIndent(prodZoomRAOK.Products[8], "", "    ")
 		// checkError(err)
 
 		// // log.Println("Products all: ", products)
 		// log.Println("Product: ", string(b))
-	}
 
+		time.AfterFunc(time.Minute*TIME_TO_CALL_CHECK_CONCISTENCY_AGAIN_MIN, checkZoomProductsConsistency)
+	}
 }
 
 // Start zoom product update.
@@ -354,12 +360,13 @@ func updateManyZoomProducts() {
 	checkZoomTicketsFinish()
 
 	// Get zoom products changed.
-	zoomProd := getChangedZunkaProducts()
+	zoomProdA := getChangedZunkaProducts()
+	// log.Printf("Changed zoom products: %+v", zoomProdA)
 
 	c := make(chan bool)
 
-	go updateZoomProducts(zoomProd, c)
-	go removeZoomProducts(zoomProd, c)
+	go updateZoomProducts(zoomProdA, c)
+	go removeZoomProducts(zoomProdA, c)
 
 	// Newest updatedAt product time.
 	if <-c == true && <-c == true {
@@ -390,9 +397,9 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 		return
 	}
 
-	// Log request.
-	zoomProductsJSONPretty, err := json.MarshalIndent(p, "", "    ")
-	log.Println("zoomProductsJSONPretty:", string(zoomProductsJSONPretty))
+	// // Log request.
+	// zoomProductsJSONPretty, err := json.MarshalIndent(p, "", "    ")
+	// log.Println("zoomProductsJSONPretty:", string(zoomProductsJSONPretty))
 
 	zoomProductsJSON, err := json.Marshal(p)
 	if checkError(err) {
@@ -734,7 +741,7 @@ func getChangedZunkaProducts() (products []productZoom) {
 		{"storeProductHeight", true},
 		{"storeProductWidth", true},
 		{"storeProductWeight", true},
-		{"storeProductActive", true},
+		{"storeProductCommercialize", true},
 		{"storeProductPrice", true},
 		{"storeProductQtd", true},
 		{"ean", true},
@@ -746,65 +753,14 @@ func getChangedZunkaProducts() (products []productZoom) {
 	// findOptions.SetLimit(12)
 	cur, err := collection.Find(ctxFind, filter, findOptions)
 	checkFatalError(err)
-
 	defer cur.Close(ctxFind)
+
 	for cur.Next(ctxFind) {
 		prodZunka := productZunka{}
-		prodZoom := productZoom{}
 		err := cur.Decode(&prodZunka)
 		checkFatalError(err)
-		// Mounted fields.
-		// ID.
-		prodZoom.ID = prodZunka.ObjectID.Hex()
-		// Name.
-		prodZoom.Name = prodZunka.Name
-		// Description.
-		prodZoom.Description = prodZunka.Detail
-		// Department.
-		prodZoom.Department = "Informática"
-		// Sub department.
-		prodZoom.SubDepartment = prodZunka.Category
-		// Dimensions.
-		prodZoom.Dimensions.CrossDocking = 2 // ?
-		prodZoom.Dimensions.Length = fmt.Sprintf("%.3f", float64(prodZunka.Length)/100)
-		prodZoom.Dimensions.Height = fmt.Sprintf("%.3f", float64(prodZunka.Height)/100)
-		prodZoom.Dimensions.Width = fmt.Sprintf("%.3f", float64(prodZunka.Width)/100)
-		prodZoom.Dimensions.Weight = strconv.Itoa(prodZunka.Weight)
-		// Free shipping.
-		prodZoom.FreeShipping = false
-		// prodZoom.FreeShipping = "false"
-		// EAN.
-		if prodZunka.EAN == "" {
-			prodZunka.EAN = findEan(prodZunka.TechInfo)
-		}
-		prodZoom.EAN = prodZunka.EAN
-		// Price from.
-		// prodZoom.Price = fmt.Sprintf("%.2f", prodZunka.Price)
-		prodZoom.Price = prodZunka.Price
-		// prodZoom.Price = strings.ReplaceAll(prodZoom.Price, ".", ",")
-		prodZoom.BasePrice = prodZoom.Price
-		// Installments.
-		prodZoom.Installments.AmountMonths = 3
-		// prodZoom.Installments.Price = fmt.Sprintf("%.2f", float64(int((prodZunka.Price/3)*100))/100)
-		prodZoom.Installments.Price = prodZunka.Price
-		prodZoom.Quantity = prodZunka.Quantity
-		prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
-		prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
-		// Images.
-		for index, urlImage := range prodZunka.Images {
-			if index == 0 {
-				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{"true", "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
-			} else {
-				prodZoom.UrlImages = append(prodZoom.UrlImages, urlImageZoom{"false", "https://www.zunka.com.br/img/" + prodZoom.ID + "/" + urlImage})
-			}
-		}
-		prodZoom.UpdatedAt = prodZunka.UpdatedAt
-		prodZoom.DeletedAt = prodZunka.DeletedAt
-		// Set newest updated time.
-		if prodZunka.UpdatedAt.After(newestProductUpdatedAtTemp) {
-			// log.Println("time updated")
-			newestProductUpdatedAtTemp = prodZunka.UpdatedAt
-		}
+
+		prodZoom := *convertProductZunkaToZoom(&prodZunka)
 		products = append(products, prodZoom)
 	}
 	if err := cur.Err(); err != nil {
@@ -854,7 +810,7 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 		{"storeProductHeight", true},
 		{"storeProductWidth", true},
 		{"storeProductWeight", true},
-		{"storeProductActive", true},
+		{"storeProductCommercialize", true},
 		{"storeProductPrice", true},
 		{"storeProductQtd", true},
 		{"ean", true},
@@ -929,7 +885,10 @@ func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) 
 	// prodZoom.Installments.Price = fmt.Sprintf("%.2f", float64(int((prodZunka.Price/3)*100))/100)
 	prodZoom.Installments.Price = prodZunka.Price
 	prodZoom.Quantity = prodZunka.Quantity
-	prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
+	if (prodZunka.Quantity > 0) && prodZunka.Commercialize {
+		prodZoom.Availability = true
+	}
+	// prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
 	prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
 	// Images.
 	for index, urlImage := range prodZunka.Images {
