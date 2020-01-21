@@ -21,13 +21,17 @@ import (
 )
 
 const (
-	ZOOM_TICK_INTERVAL                             = 30
-	ZOOM_TICKET_DEADLINE_SECONDS                   = 600.0
-	TIME_TO_CALL_CHECK_CONCISTENCY_AFTER_START_MIN = 5
-	TIME_TO_CALL_CHECK_CONCISTENCY_AGAIN_MIN       = 10
+	ZOOM_TICKET_DEADLINE_MIN        = 600
+	TIME_TO_CHECK_PRODUCTS_MIN_S    = 1
+	TIME_TO_CHECK_PRODUCTS_MIN      = 1
+	TIME_TO_CHECK_CONCISTENCY_MIN_S = 2
+	TIME_TO_CHECK_CONCISTENCY_MIN   = 10
+	TIME_TO_CHECK_TICKETS_MIN_S     = 1
+	TIME_TO_CHECK_TICKETS_MIN       = 1
 )
 
 var muxUpdateZoomProducts sync.Mutex
+var checkProductsTimer, checkConsistencyTimer, checkTicketsTimer *time.Timer
 
 type productZunka struct {
 	ObjectID      primitive.ObjectID `bson:"_id,omitempty"`
@@ -183,6 +187,7 @@ type zoomTicket struct {
 	Results    []zoomTicketResult `json:"results"`
 	ReceivedAt time.Time
 	TickCount  int // Number of ticks before get finish from zoom server.
+	ProductsID []string
 }
 type zoomTicketResult struct {
 	ProductID string `json:"product_id"`
@@ -196,17 +201,14 @@ var zoomTickets map[string]*zoomTicket
 // Zoom tickets.
 // var zoomTicker *time.Ticker
 
-func checkZoomProductsConsistency() {
-	cZoomR := make(chan productZoomRAOk)
-	cZoomDb := make(chan productZoomAOk)
-
+func checkConsistency() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Println(":: Checking zoom products consistency...")
+	log.Println(":: Checking consistency...")
 
-	// Clean zoom tickets.
-	zoomTickets = map[string]*zoomTicket{}
+	cZoomR := make(chan productZoomRAOk)
+	cZoomDb := make(chan productZoomAOk)
 
 	go getZoomProducts(cZoomR)
 	go getAllZunkaProducts(cZoomDb)
@@ -214,8 +216,8 @@ func checkZoomProductsConsistency() {
 	prodZoomDBAOk, prodZoomRAOK := <-cZoomDb, <-cZoomR
 
 	if prodZoomDBAOk.Ok && prodZoomRAOK.Ok {
-		log.Printf("Zunka products count: %v", len(*prodZoomDBAOk.Products))
-		log.Printf("Zoom Products count: %v", len(*prodZoomRAOK.Products))
+		log.Printf("\tZunka products count: %v", len(*prodZoomDBAOk.Products))
+		log.Printf("\tZoom Products count: %v", len(*prodZoomRAOK.Products))
 
 		productsToUpdate := []productZoom{}
 		productsToRemove := []productZoom{}
@@ -252,11 +254,11 @@ func checkZoomProductsConsistency() {
 			}
 		}
 
-		log.Printf("Quantity of products to update: %+v\n", len(productsToUpdate))
+		log.Printf("\tQuantity of products to update: %+v\n", len(productsToUpdate))
 		// for _, prod := range productsToUpdate {
 		// log.Printf("ID: %v", prod.ID)
 		// }
-		log.Printf("Quantity of products to delete: %+v\n", len(productsToRemove))
+		log.Printf("\tQuantity of products to delete: %+v\n", len(productsToRemove))
 		// for _, prod := range productsToRemove {
 		// log.Printf("ID: %v", prod.ID)
 		// }
@@ -277,30 +279,8 @@ func checkZoomProductsConsistency() {
 		// // log.Println("Products all: ", products)
 		// log.Println("Product: ", string(b))
 
-		time.AfterFunc(time.Minute*TIME_TO_CALL_CHECK_CONCISTENCY_AGAIN_MIN, checkZoomProductsConsistency)
+		checkConsistencyTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_CONCISTENCY_MIN, checkConsistency)
 	}
-}
-
-// Start zoom product update.
-func startZoomProductUpdate() {
-	zoomTickets = map[string]*zoomTicket{}
-	// zoomTicker = time.NewTicker(time.Second * ZOOM_TICK_INTERVAL)
-	for {
-		time.Sleep(time.Second * ZOOM_TICK_INTERVAL)
-		updateManyZoomProducts()
-		// select {
-		// case <-zoomTicker.C:
-		// log.Println(":: Tick")
-		// // updateOneZoomProduct()
-		// updateManyZoomProducts()
-		// }
-	}
-}
-
-// Stop zoom product update.
-func stopZoomProductUpdate() {
-	// zoomTicker.Stop()
-	log.Println("Zoom update products stopped")
 }
 
 // Update zoom product.
@@ -349,15 +329,44 @@ func updateOneZoomProduct() {
 	// updateNewestProductUpdatedAt()
 }
 
+// Try update prducts from failed ticket.
+func retryFailedUpdateProducts(productsID []string) {
+	muxUpdateZoomProducts.Lock()
+	defer muxUpdateZoomProducts.Unlock()
+
+	log.Printf("::	Retring failed update products...\n")
+	for _, id := range productsID {
+		log.Printf("	product ID: %v", id)
+	}
+
+	// Get zoom products.
+	zoomProdA := getZunkaProductsByID(productsID)
+	// log.Printf("Changed zoom products: %+v", zoomProdA)
+
+	c := make(chan bool)
+
+	go updateZoomProducts(zoomProdA, c)
+	go removeZoomProducts(zoomProdA, c)
+
+	<-c
+	<-c
+	// _, _ = <-c, <-c
+
+	// // Newest updatedAt product time.
+	// if <-c == true && <-c == true {
+	// updateNewestProductUpdatedAt()
+	// }
+
+	log.Println("	End update retriving products.")
+}
+
 // Update zoom producs.
-func updateManyZoomProducts() {
+func checkProducts() {
 	// log.Println("** Start update")
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Println(":: Checking changed products...")
-	// Check if tickets fineshed.
-	checkZoomTicketsFinish()
+	log.Println(":: Checking products...")
 
 	// Get zoom products changed.
 	zoomProdA := getChangedZunkaProducts()
@@ -372,7 +381,7 @@ func updateManyZoomProducts() {
 	if <-c == true && <-c == true {
 		updateNewestProductUpdatedAt()
 	}
-	// log.Println("** End update")
+	checkProductsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_PRODUCTS_MIN, checkProducts)
 }
 
 // Update zoom products at zoom server.
@@ -389,6 +398,7 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 		if product.DeletedAt.IsZero() {
 			log.Printf("Product changed. ID: %v, UpdatedAt: %v\n", product.ID, product.UpdatedAt.In(brLocation))
 			p.Products = append(p.Products, product)
+			ticket.ProductsID = append(ticket.ProductsID, product.ID)
 		}
 	}
 	// Nothing to do.
@@ -469,6 +479,7 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 		if !product.DeletedAt.IsZero() {
 			log.Printf("Product removed. ID: %v, DeletedAt: %v\n", product.ID, product.DeletedAt.In(brLocation))
 			productIDA = append(productIDA, productID{ID: product.ID})
+			ticket.ProductsID = append(ticket.ProductsID, product.ID)
 		}
 	}
 	// Nothing to do.
@@ -541,46 +552,64 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 	c <- true
 }
 
+/******************************************************************************
+* TICKET
+******************************************************************************/
 // Check if tickets finished.
-func checkZoomTicketsFinish() {
+func checkTickets() {
+	muxUpdateZoomProducts.Lock()
+	defer muxUpdateZoomProducts.Unlock()
+
+	log.Println(":: Checking tickets...")
+	ticketsIDToRemove := []string{}
+	// Range of tikcets.
 	for k, v := range zoomTickets {
 		// Give up get ticket result and check zoom products consistency.
 		elapsedTimeInSeconds := time.Since(v.ReceivedAt).Seconds()
-		if elapsedTimeInSeconds > ZOOM_TICKET_DEADLINE_SECONDS {
-			delete(zoomTickets, k)
-			// log.Println("v.ReceivedAt:", v.ReceivedAt)
-			// log.Println("now:", time.Now())
-			// log.Println("since", time.Since(v.ReceivedAt))
-			log.Printf("Removed zoom ticket ID %v (no ticket result from zoom server ater %.1f s).\n", v.ID, elapsedTimeInSeconds)
-			// Check zoom products consistency.
-			go checkZoomProductsConsistency()
-			return
+		if elapsedTimeInSeconds > ZOOM_TICKET_DEADLINE_MIN {
+			// Set ticket to be deleted and retry update products.
+			ticketsIDToRemove = append(ticketsIDToRemove, k)
+			go retryFailedUpdateProducts(v.ProductsID)
+			continue
 		}
+		// Checkt ticket.
 		v.TickCount = v.TickCount + 1
-		log.Printf("Checking zoom ticket. ID: %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
+		log.Printf(":: Checking zoom ticket. ID: %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
 		receipt, err := getZoomReceipt(k)
 		if err != nil {
-			log.Println(fmt.Sprintf("Error getting zoom ticket. %v\n.", err))
+			log.Println(fmt.Sprintf("\tError getting zoom ticket. %v\n.", err))
 			continue
 		}
 		// Finished.
 		if receipt.Finished {
+			notSuccessfulProductsId := []string{}
 			// log.Printf("Ticket zoom finished. ID: %v, Receipt: %v\n", v.ID, receipt)
-			log.Printf("Ticket zoom finished. ID: %v\n", v.ID)
+			log.Printf("\tTicket finished. ID: %v\n", v.ID)
 			for _, result := range receipt.Results {
+				log.Printf("\tProductID: %s, Status: %d, Message: %s, WarnMessages: %s\n", result.ProductID, result.Status, result.Message, result.WarnMessages)
 				// Product update failed.
-				log.Printf("    ProductID: %s, Status: %d, Message: %s\n", result.ProductID, result.Status, result.Message)
 				if result.Status != 200 && result.Status != 201 {
-					// Check zoom products consistency.
-					go checkZoomProductsConsistency()
-					return
+					notSuccessfulProductsId = append(notSuccessfulProductsId, result.ProductID)
 				}
 			}
-			delete(zoomTickets, k)
+			// Retry not successful updated products.
+			if len(notSuccessfulProductsId) > 0 {
+				go retryFailedUpdateProducts(notSuccessfulProductsId)
+			}
+			ticketsIDToRemove = append(ticketsIDToRemove, k)
 		}
 	}
+	// Remove completed or failed tickets.
+	for _, ticketId := range ticketsIDToRemove {
+		delete(zoomTickets, ticketId)
+		log.Printf("\tRemoved zoom ticket ID %v.\n", ticketId)
+	}
+	checkTicketsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_TICKETS_MIN, checkTickets)
 }
 
+/******************************************************************************
+* ZOOM PRODUCTS AND RECEIPTS
+******************************************************************************/
 // Get products from zoom webservice.
 func getZoomProducts(c chan productZoomRAOk) {
 
@@ -693,7 +722,7 @@ func getZoomReceipt(ticketId string) (receipt zoomReceipt, err error) {
 	}
 
 	// Log receipt.
-	// log.Printf("zoom receipt: %+v\n", receipt)
+	log.Printf("zoom receipt: %+v\n", receipt)
 
 	return receipt, nil
 }
@@ -846,6 +875,75 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 
 	result.Ok = true
 	c <- result
+}
+
+// Get Zunka products changed.
+func getZunkaProductsByID(productsID []string) (products []productZoom) {
+	// To save the new one when finish.
+	newestProductUpdatedAtTemp = newestProductUpdatedAt
+
+	collection := client.Database("zunka").Collection("products")
+
+	ctxFind, _ := context.WithTimeout(context.Background(), 3*time.Second)
+	// D: A BSON document. This type should be used in situations where order matters, such as MongoDB commands.
+	// M: An unordered map. It is the same as D, except it does not preserve order.
+	// A: A BSON array.
+	// E: A single element inside a D.
+	// options.Find().SetProjection(bson.D{{"storeProductTitle", true}, {"_id", false}}),
+	// {'storeProductCommercialize': true, 'storeProductTitle': {$regex: /\S/}, 'storeProductQtd': {$gt: 0}, 'storeProductPrice': {$gt: 0}};
+
+	objectIDs := []primitive.ObjectID{}
+	for _, id := range productsID {
+		objId, err := primitive.ObjectIDFromHex(id)
+		checkFatalError(err)
+		objectIDs = append(objectIDs, objId)
+	}
+
+	// log.Printf("objectIDs: %+v", objectIDs)
+
+	filter := bson.D{
+		{"storeProductPrice", bson.D{{"$gt", 0}}},
+		{"storeProductTitle", bson.D{{"$regex", `\S`}}},
+		{"_id", bson.D{{"$in", objectIDs}}},
+	}
+
+	findOptions := options.Find()
+	findOptions.SetProjection(bson.D{
+		{"_id", true},
+		{"storeProductTitle", true},
+		{"storeProductCategory", true},
+		{"storeProductDetail", true},
+		{"storeProductTechnicalInformation", true}, // To get EAN if not have EAN.
+		{"storeProductLength", true},
+		{"storeProductHeight", true},
+		{"storeProductWidth", true},
+		{"storeProductWeight", true},
+		{"storeProductCommercialize", true},
+		{"storeProductPrice", true},
+		{"storeProductQtd", true},
+		{"ean", true},
+		{"images", true},
+		{"updatedAt", true},
+		{"deletedAt", true},
+	})
+	// todo - comment.
+	// findOptions.SetLimit(12)
+	cur, err := collection.Find(ctxFind, filter, findOptions)
+	checkFatalError(err)
+	defer cur.Close(ctxFind)
+
+	for cur.Next(ctxFind) {
+		prodZunka := productZunka{}
+		err := cur.Decode(&prodZunka)
+		checkFatalError(err)
+
+		prodZoom := *convertProductZunkaToZoom(&prodZunka)
+		products = append(products, prodZoom)
+	}
+	if err := cur.Err(); err != nil {
+		log.Fatal(err)
+	}
+	return products
 }
 
 // Convert Zunka product to Zoom product.

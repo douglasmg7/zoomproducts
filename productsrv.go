@@ -37,7 +37,7 @@ var newestProductUpdatedAt time.Time
 var newestProductUpdatedAtTemp time.Time
 
 // Newest updated time product processed db param name.
-const NEWEST_PRODUCT_UPDATED_AT = "productsrv-newest-product-updated-at"
+const LAST_PRODUCT_UPDATED_TIME = "ZOOMPRODUCTS-last-product-updated-time"
 
 // Brazil time location.
 var brLocation *time.Location
@@ -89,7 +89,7 @@ func init() {
 	}
 
 	// Log start.
-	log.Printf("** Starting productsrv in %v mode (version %s) **\n", mode, version)
+	log.Printf("Starting in %v mode (version %s) **\n", mode, version)
 }
 
 func checkError(err error) bool {
@@ -122,17 +122,15 @@ func main() {
 		log.Fatalf("Error. Could not ping mongodb. %v\n", err)
 	}
 
-	// // todo - comment.
-	// checkZoomProductsConsistency()
-	// return
-
 	// Init router.
 	router := httprouter.New()
 	router.GET("/productsrv", checkZoomAuthorization(indexHandler))
 
 	getNewestProductUpdatedAt()
-	go startZoomProductUpdate()
-	time.AfterFunc(time.Minute*TIME_TO_CALL_CHECK_CONCISTENCY_AFTER_START_MIN, checkZoomProductsConsistency)
+	zoomTickets = map[string]*zoomTicket{}
+	checkConsistencyTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_CONCISTENCY_MIN_S, checkConsistency)
+	checkTicketsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_TICKETS_MIN_S, checkTickets)
+	checkProductsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_PRODUCTS_MIN_S, checkProducts)
 
 	// Create server.
 	server := &http.Server{
@@ -148,9 +146,9 @@ func main() {
 	serverStopFinish := make(chan bool, 1)
 	serverStopRequest := make(chan os.Signal, 1)
 	signal.Notify(serverStopRequest, os.Interrupt)
-	go gracefullShutdown(server, serverStopRequest, serverStopFinish)
+	go shutdown(server, serverStopRequest, serverStopFinish)
 
-	log.Println("listen address", address)
+	log.Printf("listen address: %s", address[1:])
 	// log.Fatal(http.ListenAndServe(address, newLogger(router)))
 	if err = server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Error: Could not listen on %s. %v\n", address, err)
@@ -159,11 +157,19 @@ func main() {
 	log.Println("Server stopped")
 }
 
-func gracefullShutdown(server *http.Server, serverStopRequest <-chan os.Signal, serverStopFinish chan<- bool) {
+func shutdown(server *http.Server, serverStopRequest <-chan os.Signal, serverStopFinish chan<- bool) {
 	<-serverStopRequest
 	log.Println("Server is shutting down...")
-
-	stopZoomProductUpdate()
+	// Stop timers.
+	if checkProductsTimer != nil {
+		checkProductsTimer.Stop()
+	}
+	if checkConsistencyTimer != nil {
+		checkConsistencyTimer.Stop()
+	}
+	if checkTicketsTimer != nil {
+		checkTicketsTimer.Stop()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -247,41 +253,26 @@ func checkFatalError(err error) {
 /**************************************************************************************************
 * Last time products was retrived from db.
 **************************************************************************************************/
-
 // Get newest product updated at from db.
 func getNewestProductUpdatedAt() {
 	collection := client.Database("zunka").Collection("params")
 
 	ctxFind, _ := context.WithTimeout(context.Background(), 3*time.Second)
-	// D: A BSON document. This type should be used in situations where order matters, such as MongoDB commands.
-	// M: An unordered map. It is the same as D, except it does not preserve order.
-	// A: A BSON array.
-	// E: A single element inside a D.
-	// options.Find().SetProjection(bson.D{{"storeProductTitle", true}, {"_id", false}}),
-	// {'storeProductCommercialize': true, 'storeProductTitle': {$regex: /\S/}, 'storeProductQtd': {$gt: 0}, 'storeProductPrice': {$gt: 0}};
 	filter := bson.D{
-		{"name", NEWEST_PRODUCT_UPDATED_AT},
-		// {"storeProductQtd", bson.D{
-		// {"$gt", 0},
-		// }},
+		{"name", LAST_PRODUCT_UPDATED_TIME},
 	}
-	// findOptions := options.Find()
-	// findOptions.SetProjection(bson.D{
-	// {"_id", false},
-	// {"value", true},
-	// })
 	var result struct {
 		Value time.Time `bson:"value"`
 	}
 	// cur, err := collection.FindOne(ctxFind, filter, findOptions).Decode(&result)
 	err := collection.FindOne(ctxFind, filter).Decode(&result)
 	if err == mongo.ErrNoDocuments {
-		log.Printf("Not exist param %s into db.", NEWEST_PRODUCT_UPDATED_AT)
+		log.Printf("No %s into db.", LAST_PRODUCT_UPDATED_TIME)
 		newestProductUpdatedAt = time.Time{}
 	} else if err != nil {
-		log.Fatalf("Error. Could not retrive param %s from db. %v\n", NEWEST_PRODUCT_UPDATED_AT, err)
+		log.Fatalf("[Error] Could not get %s from db. %v\n", LAST_PRODUCT_UPDATED_TIME, err)
 	}
-	log.Printf("Retrive %s from db: %v", NEWEST_PRODUCT_UPDATED_AT, result.Value.Local())
+	log.Printf("%s: %v", LAST_PRODUCT_UPDATED_TIME, result.Value.Local())
 	newestProductUpdatedAt = result.Value
 }
 
@@ -293,13 +284,13 @@ func updateNewestProductUpdatedAt() {
 	newestProductUpdatedAt = newestProductUpdatedAtTemp
 	collection := client.Database("zunka").Collection("params")
 	ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
-	filter := bson.M{"name": NEWEST_PRODUCT_UPDATED_AT}
+	filter := bson.M{"name": LAST_PRODUCT_UPDATED_TIME}
 	update := bson.M{
 		"$set": bson.M{"value": newestProductUpdatedAt},
 	}
 	_, err := collection.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	if err != nil {
-		log.Fatalf("Could not save %s into db.", NEWEST_PRODUCT_UPDATED_AT)
+		log.Fatalf("Could not save %s into db.", LAST_PRODUCT_UPDATED_TIME)
 	}
-	log.Printf("Saved %s into db: %v", NEWEST_PRODUCT_UPDATED_AT, newestProductUpdatedAt.In(brLocation))
+	log.Printf("Saved %s into db: %v", LAST_PRODUCT_UPDATED_TIME, newestProductUpdatedAt.In(brLocation))
 }
