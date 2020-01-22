@@ -24,7 +24,7 @@ const (
 	ZOOM_TICKET_DEADLINE_MIN        = 600
 	TIME_TO_CHECK_PRODUCTS_MIN_S    = 1
 	TIME_TO_CHECK_PRODUCTS_MIN      = 1
-	TIME_TO_CHECK_CONCISTENCY_MIN_S = 2
+	TIME_TO_CHECK_CONCISTENCY_MIN_S = 1
 	TIME_TO_CHECK_CONCISTENCY_MIN   = 10
 	TIME_TO_CHECK_TICKETS_MIN_S     = 1
 	TIME_TO_CHECK_TICKETS_MIN       = 1
@@ -101,8 +101,32 @@ func (p *productZoom) Equal(pr *productZoomR) bool {
 		pr.Url == p.Url &&
 		pr.Active == p.Availability {
 
+		log.Printf("Zunka ID: %+v\n", p.ID)
+		log.Printf("Zoom  ID: %+v\n", pr.ID)
+		log.Printf("Zunka FreeShipping: %+v\n", p.FreeShipping)
+		log.Printf("Zoom  FreeShipping: %+v\n", pr.FreeShipping)
+		log.Printf("Zunka Price: %+v\n", p.Price)
+		log.Printf("Zoom  Price: %+v\n", pr.Price)
+		log.Printf("Zunka Quantity: %+v\n", p.Quantity)
+		log.Printf("Zoom  Quantity: %+v\n", pr.Quantity)
+		log.Printf("Zunka URL: %+v\n", p.Url)
+		log.Printf("Zoom  URL: %+v\n", pr.Url)
+		log.Printf("Zunka Active: %+v\n", p.Availability)
+		log.Printf("Zoom  Active: %+v\n", pr.Active)
 		return true
 	}
+	log.Printf("Zunka ID: %+v\n", p.ID)
+	log.Printf("Zoom  ID: %+v\n", pr.ID)
+	log.Printf("Zunka FreeShipping: %+v\n", p.FreeShipping)
+	log.Printf("Zoom  FreeShipping: %+v\n", pr.FreeShipping)
+	log.Printf("Zunka Price: %+v\n", p.Price)
+	log.Printf("Zoom  Price: %+v\n", pr.Price)
+	log.Printf("Zunka Quantity: %+v\n", p.Quantity)
+	log.Printf("Zoom  Quantity: %+v\n", pr.Quantity)
+	log.Printf("Zunka URL: %+v\n", p.Url)
+	log.Printf("Zoom  URL: %+v\n", pr.Url)
+	log.Printf("Zunka Active: %+v\n", p.Availability)
+	log.Printf("Zoom  Active: %+v\n", pr.Active)
 	return false
 }
 
@@ -358,8 +382,6 @@ func checkProducts() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Println(":: U...")
-
 	// Get zoom products changed.
 	zoomProdA := getChangedZunkaProducts()
 	// log.Printf("Changed zoom products: %+v", zoomProdA)
@@ -579,11 +601,12 @@ func checkTickets() {
 		if receipt.Finished {
 			notSuccessfulProductsId := []string{}
 			// log.Printf("Ticket zoom finished. ID: %v, Receipt: %v\n", v.ID, receipt)
-			log.Printf("\tTicket finished. ID: %v\n", v.ID)
+			log.Printf("\tTicket %v finished\n", v.ID)
 			for _, result := range receipt.Results {
 				log.Printf("\tProductID: %s, Status: %d, Message: %s, WarnMessages: %s\n", result.ProductID, result.Status, result.Message, result.WarnMessages)
 				// Product update failed.
-				if result.Status != 200 && result.Status != 201 {
+				// 404, trying to delete nonexistent product.
+				if result.Status != 200 && result.Status != 201 && result.Status != 404 {
 					notSuccessfulProductsId = append(notSuccessfulProductsId, result.ProductID)
 				}
 			}
@@ -597,7 +620,7 @@ func checkTickets() {
 	// Remove completed or failed tickets.
 	for _, ticketId := range ticketsIDToRemove {
 		delete(zoomTickets, ticketId)
-		log.Printf("\tRemoved zoom ticket ID %v.\n", ticketId)
+		log.Printf("\tTicket %v removed\n", ticketId)
 	}
 	checkTicketsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_TICKETS_MIN, checkTickets)
 }
