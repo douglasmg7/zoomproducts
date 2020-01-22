@@ -101,32 +101,20 @@ func (p *productZoom) Equal(pr *productZoomR) bool {
 		pr.Url == p.Url &&
 		pr.Active == p.Availability {
 
-		log.Printf("Zunka ID: %+v\n", p.ID)
-		log.Printf("Zoom  ID: %+v\n", pr.ID)
-		log.Printf("Zunka FreeShipping: %+v\n", p.FreeShipping)
-		log.Printf("Zoom  FreeShipping: %+v\n", pr.FreeShipping)
-		log.Printf("Zunka Price: %+v\n", p.Price)
-		log.Printf("Zoom  Price: %+v\n", pr.Price)
-		log.Printf("Zunka Quantity: %+v\n", p.Quantity)
-		log.Printf("Zoom  Quantity: %+v\n", pr.Quantity)
-		log.Printf("Zunka URL: %+v\n", p.Url)
-		log.Printf("Zoom  URL: %+v\n", pr.Url)
-		log.Printf("Zunka Active: %+v\n", p.Availability)
-		log.Printf("Zoom  Active: %+v\n", pr.Active)
+		// log.Printf("Zunka ID: %+v\n", p.ID)
+		// log.Printf("Zoom  ID: %+v\n", pr.ID)
+		// log.Printf("Zunka FreeShipping: %+v\n", p.FreeShipping)
+		// log.Printf("Zoom  FreeShipping: %+v\n", pr.FreeShipping)
+		// log.Printf("Zunka Price: %+v\n", p.Price)
+		// log.Printf("Zoom  Price: %+v\n", pr.Price)
+		// log.Printf("Zunka Quantity: %+v\n", p.Quantity)
+		// log.Printf("Zoom  Quantity: %+v\n", pr.Quantity)
+		// log.Printf("Zunka URL: %+v\n", p.Url)
+		// log.Printf("Zoom  URL: %+v\n", pr.Url)
+		// log.Printf("Zunka Active: %+v\n", p.Availability)
+		// log.Printf("Zoom  Active: %+v\n", pr.Active)
 		return true
 	}
-	log.Printf("Zunka ID: %+v\n", p.ID)
-	log.Printf("Zoom  ID: %+v\n", pr.ID)
-	log.Printf("Zunka FreeShipping: %+v\n", p.FreeShipping)
-	log.Printf("Zoom  FreeShipping: %+v\n", pr.FreeShipping)
-	log.Printf("Zunka Price: %+v\n", p.Price)
-	log.Printf("Zoom  Price: %+v\n", pr.Price)
-	log.Printf("Zunka Quantity: %+v\n", p.Quantity)
-	log.Printf("Zoom  Quantity: %+v\n", pr.Quantity)
-	log.Printf("Zunka URL: %+v\n", p.Url)
-	log.Printf("Zoom  URL: %+v\n", pr.Url)
-	log.Printf("Zunka Active: %+v\n", p.Availability)
-	log.Printf("Zoom  Active: %+v\n", pr.Active)
 	return false
 }
 
@@ -222,9 +210,7 @@ type zoomTicketResult struct {
 // Tickets to check.
 var zoomTickets map[string]*zoomTicket
 
-// Zoom tickets.
-// var zoomTicker *time.Ticker
-
+// Check consistency.
 func checkConsistency() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
@@ -244,15 +230,18 @@ func checkConsistency() {
 		log.Printf("\tZoom Products count: %v", len(*prodZoomRAOK.Products))
 
 		productsToUpdate := []productZoom{}
-		productsToRemove := []productZoom{}
+		productsToRemove := []productZoomR{}
 
-		// Check if product exist and equal.
+		// If product not deleted check if zoom product is equal.
 		for _, prodDB := range *prodZoomDBAOk.Products {
+			// Product deleted, no need check here.
+			if !prodDB.DeletedAt.IsZero() {
+				continue
+			}
 			productExistAndEqual := false
 			for _, prodR := range *prodZoomRAOK.Products {
-				// Product exist on zoom server and equal.
-				// Active false means product removed.
-				if prodDB.ID == prodR.ID && prodR.Active == true {
+				// Product exis.
+				if prodDB.ID == prodR.ID {
 					productExistAndEqual = prodDB.Equal(&prodR)
 					break
 				}
@@ -269,23 +258,26 @@ func checkConsistency() {
 			if !prodR.Active {
 				continue
 			}
+			productExist := false
 			for _, prodDB := range *prodZoomDBAOk.Products {
 				// Product deleted.
-				if prodDB.ID == prodR.ID && !prodDB.DeletedAt.IsZero() {
-					productsToRemove = append(productsToRemove, prodDB)
-					break
+				if prodDB.ID == prodR.ID && prodDB.DeletedAt.IsZero() {
+					productExist = true
 				}
+			}
+			if !productExist {
+				productsToRemove = append(productsToRemove, prodR)
 			}
 		}
 
-		log.Printf("\tQuantity of products to update: %+v\n", len(productsToUpdate))
-		// for _, prod := range productsToUpdate {
-		// log.Printf("ID: %v", prod.ID)
-		// }
-		log.Printf("\tQuantity of products to delete: %+v\n", len(productsToRemove))
-		// for _, prod := range productsToRemove {
-		// log.Printf("ID: %v", prod.ID)
-		// }
+		log.Printf("\tProducts to update: %+v\n", len(productsToUpdate))
+		for _, prod := range productsToUpdate {
+			log.Printf("\t\t%v", prod.ID)
+		}
+		log.Printf("\tProducts to delete: %+v\n", len(productsToRemove))
+		for _, prod := range productsToRemove {
+			log.Printf("\t\t%v", prod.ID)
+		}
 
 		// c := make(chan bool)
 

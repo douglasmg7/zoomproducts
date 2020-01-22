@@ -128,6 +128,7 @@ func main() {
 
 	getNewestProductUpdatedAt()
 	zoomTickets = map[string]*zoomTicket{}
+	// checkConsistency()
 	checkConsistencyTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_CONCISTENCY_MIN_S, checkConsistency)
 	checkTicketsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_TICKETS_MIN_S, checkTickets)
 	checkProductsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_PRODUCTS_MIN_S, checkProducts)
