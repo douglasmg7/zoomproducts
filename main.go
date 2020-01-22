@@ -24,7 +24,7 @@ var address string
 
 var client *mongo.Client
 var err error
-var logPath, xmlZoomPath string
+var logPath string
 
 // Development mode.
 var dev bool
@@ -57,19 +57,17 @@ func init() {
 	if zunkaPathdata == "" {
 		panic("ZUNKAPATH not defined.")
 	}
-	logPath := path.Join(zunkaPathdata, "log", "b2b-product")
+	logPath := path.Join(zunkaPathdata, "log", "zoom")
 	// Path for xml.
 	zunkaPathDist := os.Getenv("ZUNKA_SITE_PATH")
 	if zunkaPathDist == "" {
 		panic("ZUNK_SITE_APATH not defined.")
 	}
-	xmlZoomPath = path.Join(zunkaPathDist, "dist/xml/zoom")
 	// Create path.
 	os.MkdirAll(logPath, os.ModePerm)
-	os.MkdirAll(xmlZoomPath, os.ModePerm)
 
 	// Log file.
-	logFile, err := os.OpenFile(path.Join(logPath, "productsrv.log"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	logFile, err := os.OpenFile(path.Join(logPath, "zoomproducts.log"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		panic(err)
 	}
