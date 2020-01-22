@@ -89,7 +89,7 @@ func init() {
 	}
 
 	// Log start.
-	log.Printf("Starting in %v mode (version %s) **\n", mode, version)
+	log.Printf("Starting in %v mode (version %s)\n", mode, version)
 }
 
 func checkError(err error) bool {

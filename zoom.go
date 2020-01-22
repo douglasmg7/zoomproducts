@@ -334,10 +334,10 @@ func retryFailedUpdateProducts(productsID []string) {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Printf("::	Retring failed update products...\n")
-	for _, id := range productsID {
-		log.Printf("	product ID: %v", id)
-	}
+	log.Printf(":: Retring failed update products...\n")
+	// for _, id := range productsID {
+	// log.Printf("	product ID: %v", id)
+	// }
 
 	// Get zoom products.
 	zoomProdA := getZunkaProductsByID(productsID)
@@ -350,14 +350,6 @@ func retryFailedUpdateProducts(productsID []string) {
 
 	<-c
 	<-c
-	// _, _ = <-c, <-c
-
-	// // Newest updatedAt product time.
-	// if <-c == true && <-c == true {
-	// updateNewestProductUpdatedAt()
-	// }
-
-	log.Println("	End update retriving products.")
 }
 
 // Update zoom producs.
@@ -366,20 +358,23 @@ func checkProducts() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Println(":: Checking products...")
+	log.Println(":: U...")
 
 	// Get zoom products changed.
 	zoomProdA := getChangedZunkaProducts()
 	// log.Printf("Changed zoom products: %+v", zoomProdA)
 
-	c := make(chan bool)
+	if len(zoomProdA) > 0 {
+		log.Println(":: Updating products...")
+		c := make(chan bool)
 
-	go updateZoomProducts(zoomProdA, c)
-	go removeZoomProducts(zoomProdA, c)
+		go updateZoomProducts(zoomProdA, c)
+		go removeZoomProducts(zoomProdA, c)
 
-	// Newest updatedAt product time.
-	if <-c == true && <-c == true {
-		updateNewestProductUpdatedAt()
+		// Newest updatedAt product time.
+		if <-c == true && <-c == true {
+			updateNewestProductUpdatedAt()
+		}
 	}
 	checkProductsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_PRODUCTS_MIN, checkProducts)
 }
@@ -396,7 +391,7 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 	// Select not deleted products.
 	for _, product := range prodA {
 		if product.DeletedAt.IsZero() {
-			log.Printf("Product changed. ID: %v, UpdatedAt: %v\n", product.ID, product.UpdatedAt.In(brLocation))
+			log.Printf("\tProduct %v changed, UpdatedAt: %v\n", product.ID, product.UpdatedAt.In(brLocation))
 			p.Products = append(p.Products, product)
 			ticket.ProductsID = append(ticket.ProductsID, product.ID)
 		}
@@ -461,7 +456,7 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 
 	zoomTickets[ticket.ID] = &ticket
 	ticket.ReceivedAt = time.Now()
-	log.Printf("Ticket zoom added (update). ID: %v", ticket.ID)
+	log.Printf("\tTicket %v added (updated products)", ticket.ID)
 	c <- true
 }
 
@@ -477,7 +472,7 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 	productIDA := []productID{}
 	for _, product := range prodA {
 		if !product.DeletedAt.IsZero() {
-			log.Printf("Product removed. ID: %v, DeletedAt: %v\n", product.ID, product.DeletedAt.In(brLocation))
+			log.Printf("\tProduct %v removed, DeletedAt: %v\n", product.ID, product.DeletedAt.In(brLocation))
 			productIDA = append(productIDA, productID{ID: product.ID})
 			ticket.ProductsID = append(ticket.ProductsID, product.ID)
 		}
@@ -548,7 +543,7 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 
 	zoomTickets[ticket.ID] = &ticket
 	ticket.ReceivedAt = time.Now()
-	log.Printf("Ticket zoom added (remove). ID: %v", ticket.ID)
+	log.Printf("\tTicket %v added (removed products)", ticket.ID)
 	c <- true
 }
 
@@ -560,7 +555,7 @@ func checkTickets() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Println(":: Checking tickets...")
+	// log.Println(":: Checking tickets...")
 	ticketsIDToRemove := []string{}
 	// Range of tikcets.
 	for k, v := range zoomTickets {
@@ -574,7 +569,7 @@ func checkTickets() {
 		}
 		// Checkt ticket.
 		v.TickCount = v.TickCount + 1
-		log.Printf(":: Checking zoom ticket. ID: %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
+		log.Printf(":: Checking ticket %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
 		receipt, err := getZoomReceipt(k)
 		if err != nil {
 			log.Println(fmt.Sprintf("\tError getting zoom ticket. %v\n.", err))
@@ -721,8 +716,8 @@ func getZoomReceipt(ticketId string) (receipt zoomReceipt, err error) {
 		return receipt, errors.New(fmt.Sprintf("Error unmarshal zoom receipt. %v", err))
 	}
 
-	// Log receipt.
-	log.Printf("zoom receipt: %+v\n", receipt)
+	// // Log receipt.
+	// log.Printf("zoom receipt: %+v\n", receipt)
 
 	return receipt, nil
 }
