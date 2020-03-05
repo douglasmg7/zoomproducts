@@ -11,10 +11,10 @@ import (
 func HandleError(w http.ResponseWriter, err error) {
 	if err != nil {
 		// http.Error(w, "Some thing wrong", 404)
-		if dev {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		} else {
+		if production {
 			http.Error(w, "Alguma coisa deu errado", http.StatusInternalServerError)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		log.Println(err.Error())
 		return

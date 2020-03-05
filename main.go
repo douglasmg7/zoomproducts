@@ -10,7 +10,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -26,8 +25,10 @@ var client *mongo.Client
 var err error
 var logPath string
 
-// Development mode.
-var dev bool
+// Production mode.
+var production bool
+
+// Init time.
 var initTime time.Time
 
 // Newest updated time product processed.
@@ -79,15 +80,12 @@ func init() {
 	// log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetFlags(log.Ldate | log.Lmicroseconds)
 
-	// Run mode.
-	mode := "production"
-	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "dev") {
-		dev = true
-		mode = "development"
+	// Check if production mode.
+	for _, arg := range os.Args {
+		if arg == "production" {
+			production = true
+		}
 	}
-
-	// Log start.
-	log.Printf("Starting in %v mode (version %s)\n", mode, version)
 }
 
 func checkError(err error) bool {
@@ -102,6 +100,13 @@ func checkError(err error) bool {
 }
 
 func main() {
+	// Log start.
+	runMode := "development"
+	if production {
+		runMode = "production"
+	}
+	log.Printf("Running in %v mode (version %s)\n", runMode, version)
+
 	// MongoDB config.
 	client, err = mongo.NewClient(options.Client().ApplyURI(zunkaSiteMongoDBConnectionString))
 
