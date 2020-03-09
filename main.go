@@ -44,6 +44,11 @@ const LAST_PRODUCT_UPDATED_TIME = "ZOOMPRODUCTS-last-product-updated-time"
 var brLocation *time.Location
 
 func init() {
+	// Check if production mode.
+	if os.Getenv("RUN_MODE") == "production" {
+		production = true
+	}
+
 	// Brazil location.
 	brLocation, err = time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
@@ -79,13 +84,6 @@ func init() {
 	// log.SetFlags(log.LstdFlags)
 	// log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetFlags(log.Ldate | log.Lmicroseconds)
-
-	// Check if production mode.
-	for _, arg := range os.Args {
-		if arg == "production" {
-			production = true
-		}
-	}
 }
 
 func checkError(err error) bool {
