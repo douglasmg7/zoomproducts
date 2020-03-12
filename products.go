@@ -47,6 +47,7 @@ type productZunka struct {
 	Weight        int                `bson:"storeProductWeight"`
 	Quantity      int                `bson:"storeProductQtd"`
 	Commercialize bool               `bson:"storeProductCommercialize"`
+	MarketZoom    bool               `bson:"marketZoom"`
 	Images        []string           `bson:"images"`
 	UpdatedAt     time.Time          `bson:"updatedAt"`
 	DeletedAt     time.Time          `bson:"deletedAt"`
@@ -83,10 +84,11 @@ type productZoom struct {
 		Width        string `json:"width"`         // M
 		Weight       string `json:"weight"`        // KG
 	} `json:"stock_info"`
-	UrlImages []urlImageZoom `json:"url_images"`
-	Url       string         `json:"url"`
-	UpdatedAt time.Time      `json:"-"`
-	DeletedAt time.Time      `json:"-"`
+	UrlImages  []urlImageZoom `json:"url_images"`
+	Url        string         `json:"url"`
+	MarketZoom bool           `json:"-"`
+	UpdatedAt  time.Time      `json:"-"`
+	DeletedAt  time.Time      `json:"-"`
 }
 
 // Check if product received is equal.
@@ -402,9 +404,9 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 	}{
 		Products: []productZoom{},
 	}
-	// Select not deleted products.
 	for _, product := range prodA {
-		if product.DeletedAt.IsZero() {
+		// Update only not deleted products and marked to zoom market place.
+		if product.DeletedAt.IsZero() && product.MarketZoom {
 			log.Printf("\tProduct %v changed, UpdatedAt: %v\n", product.ID, product.UpdatedAt.In(brLocation))
 			p.Products = append(p.Products, product)
 			ticket.ProductsID = append(ticket.ProductsID, product.ID)
@@ -485,8 +487,14 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 
 	productIDA := []productID{}
 	for _, product := range prodA {
-		if !product.DeletedAt.IsZero() {
-			log.Printf("\tProduct %v removed, DeletedAt: %v\n", product.ID, product.DeletedAt.In(brLocation))
+		// Remove deleted products and not marked to zoom market place.
+		if !product.DeletedAt.IsZero() || !product.MarketZoom {
+			if !product.DeletedAt.IsZero() {
+				log.Printf("\tProduct %v removed, DeletedAt: %v\n", product.ID, product.DeletedAt.In(brLocation))
+			}
+			if !product.MarketZoom {
+				log.Printf("\tProduct %v not marked to zoom market place, UpdatedAt: %v\n", product.ID, product.UpdatedAt.In(brLocation))
+			}
 			productIDA = append(productIDA, productID{ID: product.ID})
 			ticket.ProductsID = append(ticket.ProductsID, product.ID)
 		}
@@ -785,6 +793,7 @@ func getChangedZunkaProducts() (products []productZoom) {
 		{"storeProductQtd", true},
 		{"ean", true},
 		{"images", true},
+		{"marketZoom", true},
 		{"updatedAt", true},
 		{"deletedAt", true},
 	})
@@ -996,6 +1005,7 @@ func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) 
 	if (prodZunka.Quantity > 0) && prodZunka.Commercialize {
 		prodZoom.Availability = true
 	}
+	prodZoom.MarketZoom = prodZunka.MarketZoom
 	// prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
 	prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
 	// Images.
