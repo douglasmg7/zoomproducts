@@ -83,7 +83,8 @@ func init() {
 	log.SetOutput(mw)
 	// log.SetFlags(log.LstdFlags)
 	// log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetFlags(log.Ldate | log.Lmicroseconds)
+	log.SetPrefix("[zoomproducts] ")
+	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lmsgprefix)
 }
 
 func checkError(err error) bool {

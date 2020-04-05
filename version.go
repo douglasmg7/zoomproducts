@@ -1,6 +1,9 @@
 package main
 
 const (
-	// Using environment variable de define run mode.
-	version string = "1.0.0"
+	version string = "1.0.1"
+	// Log prefix.
+
+	// version string = "1.0.0"
+	// // Using environment variable de define run mode.
 )
