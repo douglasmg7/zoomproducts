@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Usage: $0 user password"
+    exit 1
+fi
 
-# curl -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -d "5c83a2537b51490610f82be5" https://staging-merchant.zoom.com.br/api/merchant/product
-# curl -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://staging-merchant.zoom.com.br/api/merchant/product
+RES=$(curl -s -u "$1:$2" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products)
 
-# curl -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products
+STATUS=$(echo $RES | jq -r '.status')
 
+if [ $STATUS != null ]; then
+    echo $RES
+    exit 0
+fi
 
-RES=$(curl -s -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products)
+echo $RES | jq -r '.products | .[] | select(.active == true)'
+
+# RES=$(curl -s -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products)
 
 # echo $RES | jq -r .products
 # echo $RES | jq -r '.products | .[0]'
@@ -16,4 +25,3 @@ RES=$(curl -s -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application
 # echo $RES | jq -r '.products | .[]'
 	# jq '.[] | select(.id == "second")'
 
-echo $RES | jq -r '.products | .[] | select(.active == true)'
