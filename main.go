@@ -151,7 +151,7 @@ func main() {
 	signal.Notify(serverStopRequest, os.Interrupt)
 	go shutdown(server, serverStopRequest, serverStopFinish)
 
-	log.Printf("listen address: %s", address[1:])
+	log.Printf("Listen address: %s", address[1:])
 	// log.Fatal(http.ListenAndServe(address, newLogger(router)))
 	if err = server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Error: Could not listen on %s. %v\n", address, err)

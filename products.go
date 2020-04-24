@@ -25,7 +25,7 @@ const (
 	TIME_TO_CHECK_PRODUCTS_MIN_S    = 1
 	TIME_TO_CHECK_PRODUCTS_MIN      = 1
 	TIME_TO_CHECK_CONCISTENCY_MIN_S = 1
-	TIME_TO_CHECK_CONCISTENCY_MIN   = 10
+	TIME_TO_CHECK_CONCISTENCY_MIN   = 5
 	TIME_TO_CHECK_TICKETS_MIN_S     = 1
 	TIME_TO_CHECK_TICKETS_MIN       = 1
 )
@@ -230,16 +230,16 @@ func checkConsistency() {
 	prodZoomDBAOk, prodZoomRAOK := <-cZoomDb, <-cZoomR
 
 	if prodZoomDBAOk.Ok && prodZoomRAOK.Ok {
-		log.Printf("\tZunka products count: %v", len(*prodZoomDBAOk.Products))
-		log.Printf("\tZoom Products count: %v", len(*prodZoomRAOK.Products))
+		// log.Printf("\tZunka products count: %v", len(*prodZoomDBAOk.Products))
+		// log.Printf("\tZoom Products count: %v", len(*prodZoomRAOK.Products))
 
 		productsToUpdate := []productZoom{}
 		productsToRemove := []productZoom{}
 
-		// Check zoom product is equal.
+		// Check if zoom have all products.
 		for _, prodDB := range *prodZoomDBAOk.Products {
 			// Product deleted or not marked to market Zoom.
-			if prodDB.DeletedAt.IsZero() || !prodDB.MarketZoom {
+			if !prodDB.DeletedAt.IsZero() || !prodDB.MarketZoom {
 				continue
 			}
 			// Product exist.
@@ -267,16 +267,16 @@ func checkConsistency() {
 			for _, prodDB := range *prodZoomDBAOk.Products {
 				// Product exist on db.
 				if prodDB.ID == prodR.ID {
-					// Product deleted.
+					// Product deleted or not marked to market Zoom.
 					if !prodDB.DeletedAt.IsZero() || !prodDB.MarketZoom {
 						productsToRemove = append(productsToRemove, productZoom{
 							ID:         prodDB.ID,
 							DeletedAt:  prodDB.DeletedAt,
 							MarketZoom: prodDB.MarketZoom,
 						})
-						productFound = true
-						break
 					}
+					productFound = true
+					break
 				}
 			}
 			// Product never existed on Zunka db.
@@ -288,14 +288,17 @@ func checkConsistency() {
 			}
 		}
 
-		log.Printf("\tProducts to update: %+v\n", len(productsToUpdate))
+		productsToUpdateList := []string{}
 		for _, prod := range productsToUpdate {
-			log.Printf("\t\t%v", prod.ID)
+			productsToUpdateList = append(productsToUpdateList, prod.ID)
 		}
-		log.Printf("\tProducts to delete: %+v\n", len(productsToRemove))
+		log.Printf("\tProducts to update (%d): %s", len(productsToUpdate), strings.Join(productsToUpdateList, ", "))
+
+		productsToRemoveList := []string{}
 		for _, prod := range productsToRemove {
-			log.Printf("\t\t%v", prod.ID)
+			productsToRemoveList = append(productsToRemoveList, prod.ID)
 		}
+		log.Printf("\tProducts to remove (%d): %s", len(productsToRemove), strings.Join(productsToRemoveList, ", "))
 
 		c := make(chan bool)
 
@@ -304,7 +307,7 @@ func checkConsistency() {
 
 		// Newest updatedAt product time.
 		if <-c == true && <-c == true {
-			log.Println("Zoom products consistency check finished.")
+			log.Println("\tZoom products consistency check finished.")
 		}
 
 		// b, err := json.MarshalIndent(prodZoomRAOK.Products[8], "", "    ")
@@ -387,18 +390,15 @@ func retryFailedUpdateProducts(productsID []string) {
 
 // Update zoom producs.
 func checkProducts() {
-	// log.Println("** Start update")
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
-
-	log.Println(":: Checking changed products...")
 
 	// Get zoom products changed.
 	zoomProdA := getChangedZunkaProducts()
 	// log.Printf("Changed zoom products: %+v", zoomProdA)
 
 	if len(zoomProdA) > 0 {
-		// log.Println(":: Updating products...")
+		log.Println(":: Products changed...")
 		c := make(chan bool)
 
 		go updateZoomProducts(zoomProdA, c)
@@ -408,6 +408,8 @@ func checkProducts() {
 		if <-c == true && <-c == true {
 			updateNewestProductUpdatedAt()
 		}
+	} else {
+		log.Println("No changed products.")
 	}
 	checkProductsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_PRODUCTS_MIN, checkProducts)
 }
@@ -444,7 +446,7 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 		c <- false
 		return
 	}
-	// log.Println("zoomProductsJSON:", string(zoomProductsJSON))
+	log.Println("zoomProductsJSON:", string(zoomProductsJSON))
 
 	// Request products.
 	client := &http.Client{}
@@ -506,7 +508,7 @@ func removeZoomProducts(prodA []productZoom, c chan bool) {
 	for _, product := range prodA {
 		// Remove deleted products and not marked to zoom market place.
 		if !product.DeletedAt.IsZero() || !product.MarketZoom || product.NeverExisted {
-			if !product.NeverExisted {
+			if product.NeverExisted {
 				// Never existed.
 				log.Printf("\tProduct %v removed, Never existed on Zunka db.", product.ID)
 			} else if !product.DeletedAt.IsZero() {
@@ -598,9 +600,8 @@ func checkTickets() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
-	log.Println(":: checking tickets...")
-
 	// log.Println(":: Checking tickets...")
+
 	ticketsIDToRemove := []string{}
 	// Range of tikcets.
 	for k, v := range zoomTickets {
@@ -609,7 +610,8 @@ func checkTickets() {
 		if elapsedTimeInSeconds > ZOOM_TICKET_DEADLINE_MIN {
 			// Set ticket to be deleted and retry update products.
 			ticketsIDToRemove = append(ticketsIDToRemove, k)
-			go retryFailedUpdateProducts(v.ProductsID)
+			log.Printf("Give up ticket %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
+			// go retryFailedUpdateProducts(v.ProductsID)
 			continue
 		}
 		// Checkt ticket.
@@ -635,7 +637,7 @@ func checkTickets() {
 			}
 			// Retry not successful updated products.
 			if len(notSuccessfulProductsId) > 0 {
-				go retryFailedUpdateProducts(notSuccessfulProductsId)
+				// go retryFailedUpdateProducts(notSuccessfulProductsId)
 			}
 			ticketsIDToRemove = append(ticketsIDToRemove, k)
 		}
@@ -724,23 +726,26 @@ func getZoomProducts(c chan productZoomRAOk) {
 
 	// Log active products.
 	productsActiveCount := 0
+	productsActiveList := []string{}
 	for _, product := range *result.Products {
 		if product.Active {
-			log.Printf("[debug] [product] [active] ID: %v", product.ID)
+			productsActiveList = append(productsActiveList, product.ID)
 			productsActiveCount++
 		}
 	}
-	log.Println("[debug] Zoom active products count: %d", productsActiveCount)
+	log.Printf("\tActive Zoom products  (%d): %s", productsActiveCount, strings.Join(productsActiveList, ", "))
 
-	productsNoActiveCount := 0
-	// Log non active products.
+	// Log not active products.
+	productsNotActiveCount := 0
+	productsNotActiveList := []string{}
 	for _, product := range *result.Products {
-		if product.Active {
-			log.Printf("[debug] [product] [noactive] ID: %v", product.ID)
-			productsNoActiveCount++
+		if !product.Active {
+			productsNotActiveList = append(productsNotActiveList, product.ID)
+			productsNotActiveCount++
 		}
 	}
-	log.Println("[debug] Zoom no active products count: %d", productsNoActiveCount)
+	// log.Printf("\tNot active zoom products (%d): %s", productsNotActiveCount, strings.Join(productsNotActiveList, ", "))
+	log.Printf("\tNot active zoom products (%d)", productsNotActiveCount)
 
 	result.Ok = true
 	c <- result
@@ -881,12 +886,12 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 		// {"storeProductQtd", bson.D{
 		// {"$gt", 0},
 		// }},
-		{"storeProductPrice", bson.D{
-			{"$gt", 0},
-		}},
-		{"storeProductTitle", bson.D{
-			{"$regex", `\S`},
-		}},
+		// {"storeProductPrice", bson.D{
+		// {"$gt", 0},
+		// }},
+		// {"storeProductTitle", bson.D{
+		// {"$regex", `\S`},
+		// }},
 		// {"updatedAt", bson.D{
 		// {"$gt", newestProductUpdatedAt},
 		// }},
@@ -906,6 +911,7 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 		{"storeProductPrice", true},
 		{"storeProductQtd", true},
 		{"ean", true},
+		{"marketZoom", true},
 		{"images", true},
 		{"updatedAt", true},
 		{"deletedAt", true},
@@ -935,6 +941,15 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 		log.Fatal(err)
 	}
 	// log.Printf("Products count: %v\n", len(*result.Products))
+	validProductsCount := 0
+	validProductsList := []string{}
+	for _, product := range *result.Products {
+		if product.Availability && product.MarketZoom {
+			validProductsList = append(validProductsList, product.ID)
+			validProductsCount++
+		}
+	}
+	log.Printf("\tActive Zunka products (%d): %s", validProductsCount, strings.Join(validProductsList, ", "))
 
 	result.Ok = true
 	c <- result
@@ -965,8 +980,8 @@ func getZunkaProductsByID(productsID []string) (products []productZoom) {
 	// log.Printf("objectIDs: %+v", objectIDs)
 
 	filter := bson.D{
-		{"storeProductPrice", bson.D{{"$gt", 0}}},
-		{"storeProductTitle", bson.D{{"$regex", `\S`}}},
+		// {"storeProductPrice", bson.D{{"$gt", 0}}},
+		// {"storeProductTitle", bson.D{{"$regex", `\S`}}},
 		{"_id", bson.D{{"$in", objectIDs}}},
 	}
 
@@ -1049,7 +1064,9 @@ func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) 
 	if prodZunka.Commercialize && (prodZunka.Quantity > 0) && (prodZunka.Price > 0) && (prodZunka.Name != "") {
 		prodZoom.Availability = true
 	}
-	prodZoom.MarketZoom = prodZunka.MarketZoom
+	if prodZunka.Commercialize && prodZunka.MarketZoom {
+		prodZoom.MarketZoom = true
+	}
 	// prodZoom.Availability = strconv.FormatBool(prodZunka.Active)
 	prodZoom.Url = "https://www.zunka.com.br/product/" + prodZoom.ID
 	// Images.
