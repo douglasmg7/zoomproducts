@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $0 user password"
-    exit 1
-fi
-
-RES=$(curl -s -u "$1:$2" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products)
+    
+read -r USER PASS <<< $(./auth.sh)
+# echo curl -s -u $USER:$PASS -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products
+RES=$(curl -s -u $USER:$PASS -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products)
 
 STATUS=$(echo $RES | jq -r '.status')
 
@@ -14,8 +12,6 @@ if [ $STATUS != null ]; then
 fi
 
 echo $RES | jq -r '.products | .[] | select(.active == true)'
-
-# RES=$(curl -s -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/products)
 
 # echo $RES | jq -r .products
 # echo $RES | jq -r '.products | .[0]'

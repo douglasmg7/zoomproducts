@@ -126,7 +126,8 @@ func main() {
 
 	// Init router.
 	router := httprouter.New()
-	router.GET("/productsrv", checkZoomAuthorization(indexHandler))
+	// router.GET("/productsrv", checkZoomAuthorization(indexHandler))
+	router.GET("/", checkZoomAuthorization(indexHandler))
 
 	getNewestProductUpdatedAt()
 	zoomTickets = map[string]*zoomTicket{}

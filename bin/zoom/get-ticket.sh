@@ -5,6 +5,7 @@ if [ -z "$1" ]
     echo "Usage: $0 ticket"
 fi
 
-curl -u "zoomteste_zunka:H2VA79Ug4fjFsJb" -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/receipt/$1
+read -r USER PASS <<< $(./auth.sh)
+curl -u $USER:$PASS -H "Content-Type: application/json" https://merchant.zoom.com.br/api/merchant/receipt/$1
 
 printf "\n"
