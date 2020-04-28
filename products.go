@@ -219,6 +219,11 @@ func checkConsistency() {
 	muxUpdateZoomProducts.Lock()
 	defer muxUpdateZoomProducts.Unlock()
 
+	if len(zoomTickets) > 0 {
+		log.Printf(":: Will not checking consistency, waiting to finish %d ticket(s).", len(zoomTickets))
+		checkConsistencyTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_CONCISTENCY_MIN, checkConsistency)
+		return
+	}
 	log.Println(":: Checking consistency...")
 
 	cZoomR := make(chan productZoomRAOk)
@@ -300,15 +305,17 @@ func checkConsistency() {
 		}
 		log.Printf("\tProducts to remove (%d): %s", len(productsToRemove), strings.Join(productsToRemoveList, ", "))
 
-		c := make(chan bool)
+		// todo - Uncomment begin.
+		// c := make(chan bool)
 
-		go updateZoomProducts(productsToUpdate, c)
-		go removeZoomProducts(productsToRemove, c)
+		// go updateZoomProducts(productsToUpdate, c)
+		// go removeZoomProducts(productsToRemove, c)
 
-		// Newest updatedAt product time.
-		if <-c == true && <-c == true {
-			log.Println("\tZoom products consistency check finished.")
-		}
+		// // Newest updatedAt product time.
+		// if <-c == true && <-c == true {
+		// log.Println("\tZoom products consistency check finished.")
+		// }
+		// todo - Uncomment finish.
 
 		// b, err := json.MarshalIndent(prodZoomRAOK.Products[8], "", "    ")
 		// checkError(err)
@@ -645,7 +652,7 @@ func checkTickets() {
 	// Remove completed or failed tickets.
 	for _, ticketId := range ticketsIDToRemove {
 		delete(zoomTickets, ticketId)
-		log.Printf("\tTicket %v removed\n", ticketId)
+		// log.Printf("\tTicket %v removed\n", ticketId)
 	}
 	checkTicketsTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_TICKETS_MIN, checkTickets)
 }
