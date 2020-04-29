@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 if [ -z "$1" ]; then
-    echo "Usage: $0 ticket-id"
+    echo "Usage: $0 product-id"
     exit 1
 fi
 
