@@ -24,7 +24,7 @@ do
     # printf "\n"
 
     # printf "$NOW\t$RES\n"
-    sleep 20m
+    sleep 5m
 done
 
 
