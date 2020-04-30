@@ -21,13 +21,13 @@ import (
 )
 
 const (
-	ZOOM_TICKET_DEADLINE_MIN        = 600
+	ZOOM_TICKET_DEADLINE_MIN        = 60
 	TIME_TO_CHECK_PRODUCTS_MIN_S    = 1
-	TIME_TO_CHECK_PRODUCTS_MIN      = 1
-	TIME_TO_CHECK_CONCISTENCY_MIN_S = 1
-	TIME_TO_CHECK_CONCISTENCY_MIN   = 5
-	TIME_TO_CHECK_TICKETS_MIN_S     = 1
-	TIME_TO_CHECK_TICKETS_MIN       = 1
+	TIME_TO_CHECK_PRODUCTS_MIN      = 5
+	TIME_TO_CHECK_CONCISTENCY_MIN_S = 10
+	TIME_TO_CHECK_CONCISTENCY_MIN   = 20
+	TIME_TO_CHECK_TICKETS_MIN_S     = 2
+	TIME_TO_CHECK_TICKETS_MIN       = 5
 )
 
 var muxUpdateZoomProducts sync.Mutex
@@ -321,9 +321,8 @@ func checkConsistency() {
 		// checkError(err)
 		// // log.Println("Products all: ", products)
 		// log.Println("Product: ", string(b))
-
-		checkConsistencyTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_CONCISTENCY_MIN, checkConsistency)
 	}
+	checkConsistencyTimer = time.AfterFunc(time.Minute*TIME_TO_CHECK_CONCISTENCY_MIN, checkConsistency)
 }
 
 // Update zoom product.
@@ -614,7 +613,7 @@ func checkTickets() {
 	for k, v := range zoomTickets {
 		// Give up get ticket result and check zoom products consistency.
 		elapsedTimeInSeconds := time.Since(v.ReceivedAt).Seconds()
-		if elapsedTimeInSeconds > ZOOM_TICKET_DEADLINE_MIN {
+		if elapsedTimeInSeconds > ZOOM_TICKET_DEADLINE_MIN*60 {
 			// Set ticket to be deleted and retry update products.
 			ticketsIDToRemove = append(ticketsIDToRemove, k)
 			log.Printf("Give up ticket %v, TickCount: %d, Elapsed time: %.1f s\n", v.ID, v.TickCount, elapsedTimeInSeconds)
