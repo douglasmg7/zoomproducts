@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -297,12 +298,14 @@ func checkConsistency() {
 		for _, prod := range productsToUpdate {
 			productsToUpdateList = append(productsToUpdateList, prod.ID)
 		}
+		sort.Strings(productsToUpdateList)
 		log.Printf("\tProducts to update (%d): %s", len(productsToUpdate), strings.Join(productsToUpdateList, ", "))
 
 		productsToRemoveList := []string{}
 		for _, prod := range productsToRemove {
 			productsToRemoveList = append(productsToRemoveList, prod.ID)
 		}
+		sort.Strings(productsToRemoveList)
 		log.Printf("\tProducts to remove (%d): %s", len(productsToRemove), strings.Join(productsToRemoveList, ", "))
 
 		// todo - Uncomment begin.
@@ -739,6 +742,7 @@ func getZoomProducts(c chan productZoomRAOk) {
 			productsActiveCount++
 		}
 	}
+	sort.Strings(productsActiveList)
 	log.Printf("\tActive Zoom products  (%d): %s", productsActiveCount, strings.Join(productsActiveList, ", "))
 
 	// Log not active products.
@@ -955,6 +959,7 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 			validProductsCount++
 		}
 	}
+	sort.Strings(validProductsList)
 	log.Printf("\tActive Zunka products (%d): %s", validProductsCount, strings.Join(validProductsList, ", "))
 
 	result.Ok = true
