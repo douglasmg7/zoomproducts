@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -29,6 +30,7 @@ const (
 	TIME_TO_CHECK_CONCISTENCY_MIN   = 20
 	TIME_TO_CHECK_TICKETS_MIN_S     = 2
 	TIME_TO_CHECK_TICKETS_MIN       = 5
+	AMOUNT_CHARGED_BY_ZOOM          = 1.12 // In percentage.
 )
 
 var muxUpdateZoomProducts sync.Mutex
@@ -97,27 +99,31 @@ type productZoom struct {
 func (p *productZoom) Equal(pr *productZoomR) bool {
 	// ID.
 	if pr.ID != p.ID {
-		log.Printf("[debug] [product] Product ID %+v. ID not equal. Zunka: %+v, Zoom: %+v\n", p.ID, p.ID, pr.ID)
+		log.Printf("Different ID. Zunka ID: %+v, Zoom ID: %+v\n", p.ID, pr.ID)
 		return false
 	}
 	// Free shipping.
 	if pr.FreeShipping != p.FreeShipping {
-		log.Printf("[debug] [product] Product ID %+v. Free shipping not equal. Zunka: %+v, Zoom: %+v\n", p.ID, p.FreeShipping, pr.FreeShipping)
+		log.Printf("Different free shipping. Product ID: %v, Zunka: %+v, Zoom: %+v\n", p.ID, p.FreeShipping, pr.FreeShipping)
 		return false
 	}
-	// Price.
-	if pr.Price != p.Price {
-		log.Printf("[debug] [product] Product ID %+v. Price not equal. Zunka: %+v, Zoom: %+v\n", p.ID, p.Price, pr.Price)
+	// Price - can have a little difference.
+	priceDiff := math.Abs(p.Price - pr.Price)
+	if priceDiff > 0.10 {
+		// log.Printf("pr.Price: %v", pr.Price)
+		// log.Printf("priceWithCharge: %v", priceWithCharge)
+		// log.Printf("priceDiff: %v", keepTowDigits(priceDiff))
+		log.Printf("Different price. Product ID %+v, Zunka with charge: %+v, Zoom: %+v, Diff: %+v\n", p.ID, p.Price, pr.Price, keepTowDigits(priceDiff))
 		return false
 	}
 	// Quantity.
 	if pr.Quantity != p.Quantity {
-		log.Printf("[debug] [product] Product ID %+v. Quantity not equal. Zunka: %+v, Zoom: %+v\n", p.ID, p.Quantity, pr.Quantity)
+		log.Printf("Different quantity. Product ID: %+v, Zunka: %+v, Zoom: %+v\n", p.ID, p.Quantity, pr.Quantity)
 		return false
 	}
 	// Url.
 	if pr.Url != p.Url {
-		log.Printf("[debug] [product] Product ID %+v. Url not equal. Zunka: %+v, Zoom: %+v\n", p.ID, p.Url, pr.Url)
+		log.Printf("Different Url. Product ID %+v, Zunka: %+v, Zoom: %+v\n", p.ID, p.Url, pr.Url)
 		return false
 	}
 	return true
@@ -245,7 +251,7 @@ func checkConsistency() {
 		// Check if zoom have all products.
 		for _, prodDB := range *prodZoomDBAOk.Products {
 			// Product deleted or not marked to market Zoom.
-			if !prodDB.DeletedAt.IsZero() || !prodDB.MarketZoom {
+			if !prodDB.DeletedAt.IsZero() || !prodDB.MarketZoom || prodDB.Quantity == 0 {
 				continue
 			}
 			// Product exist.
@@ -1064,7 +1070,8 @@ func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) 
 	prodZoom.EAN = prodZunka.EAN
 	// Price from.
 	// prodZoom.Price = fmt.Sprintf("%.2f", prodZunka.Price)
-	prodZoom.Price = prodZunka.Price
+	prodZoom.Price = keepTowDigits(prodZunka.Price * AMOUNT_CHARGED_BY_ZOOM)
+	// log.Printf("prodZoom.Price: %v", prodZoom.Price)
 	// prodZoom.Price = strings.ReplaceAll(prodZoom.Price, ".", ",")
 	prodZoom.BasePrice = prodZoom.Price
 	// Installments.
@@ -1109,4 +1116,9 @@ func findEan(s string) string {
 		}
 	}
 	return ""
+}
+
+// Try keep only 2 digits.
+func keepTowDigits(val float64) float64 {
+	return float64(int(val*100)) / 100
 }
