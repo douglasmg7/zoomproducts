@@ -146,10 +146,8 @@ func main() {
 		IdleTimeout:  15 * time.Second,
 	}
 
-	// Test - keep it commented.
-	log.Printf("Running test routine...")
+	// Check consistency at beggin.
 	checkConsistency()
-	// End test
 
 	// Gracegull shutdown.
 	serverStopFinish := make(chan bool, 1)
