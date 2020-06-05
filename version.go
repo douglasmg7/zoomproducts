@@ -1,8 +1,11 @@
 package main
 
 const (
-	version string = "1.0.4"
-	// Log list of products, ordered.
+	version string = "1.0.5"
+	// Amount charged by zoom changed from 12% to 11%.
+
+	// version string = "1.0.4"
+	// // Log list of products, ordered.
 
 	// version string = "1.0.3"
 	// // Bux - check consistency timer.

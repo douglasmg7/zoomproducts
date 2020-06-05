@@ -30,7 +30,7 @@ const (
 	TIME_TO_CHECK_CONCISTENCY_MIN   = 20
 	TIME_TO_CHECK_TICKETS_MIN_S     = 2
 	TIME_TO_CHECK_TICKETS_MIN       = 5
-	AMOUNT_CHARGED_BY_ZOOM          = 1.12 // In percentage.
+	AMOUNT_CHARGED_BY_ZOOM          = 1.11 // In percentage.
 )
 
 var muxUpdateZoomProducts sync.Mutex
