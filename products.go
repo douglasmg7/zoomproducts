@@ -461,7 +461,7 @@ func updateZoomProducts(prodA []productZoom, c chan bool) {
 		c <- false
 		return
 	}
-	log.Println("zoomProductsJSON:", string(zoomProductsJSON))
+	// log.Println("zoomProductsJSON:", string(zoomProductsJSON))
 
 	// Request products.
 	client := &http.Client{}
@@ -749,7 +749,8 @@ func getZoomProducts(c chan productZoomRAOk) {
 		}
 	}
 	sort.Strings(productsActiveList)
-	log.Printf("\tActive Zoom products  (%d): %s", productsActiveCount, strings.Join(productsActiveList, ", "))
+	// log.Printf("\tActive Zoom products  (%d): %s", productsActiveCount, strings.Join(productsActiveList, ", "))
+	log.Printf("\tActive Zoom products: (%d)", productsActiveCount)
 
 	// Log not active products.
 	productsNotActiveCount := 0
@@ -761,7 +762,7 @@ func getZoomProducts(c chan productZoomRAOk) {
 		}
 	}
 	// log.Printf("\tNot active zoom products (%d): %s", productsNotActiveCount, strings.Join(productsNotActiveList, ", "))
-	log.Printf("\tNot active zoom products (%d)", productsNotActiveCount)
+	log.Printf("\tNot active zoom products: (%d)", productsNotActiveCount)
 
 	result.Ok = true
 	c <- result
@@ -966,7 +967,8 @@ func getAllZunkaProducts(c chan productZoomAOk) {
 		}
 	}
 	sort.Strings(validProductsList)
-	log.Printf("\tActive Zunka products (%d): %s", validProductsCount, strings.Join(validProductsList, ", "))
+	// log.Printf("\tActive Zunka products (%d): %s", validProductsCount, strings.Join(validProductsList, ", "))
+	log.Printf("\tActive Zunka products: (%d)", validProductsCount)
 
 	result.Ok = true
 	c <- result
