@@ -1,8 +1,11 @@
 package main
 
 const (
-	version string = "1.0.6"
-	// Some debugs removed.
+	// Invalid format for tech info crash find ean.
+	version string = "1.0.7"
+
+	// version string = "1.0.6"
+	// // Some debugs removed.
 
 	// version string = "1.0.5"
 	// // Amount charged by zoom changed from 12% to 11%.

@@ -1114,11 +1114,29 @@ func findEan(s string) string {
 	r := regexp.MustCompile(`(?i).*ean.*`)
 	for _, line := range lines {
 		if r.MatchString(line) {
-			return strings.TrimSpace(strings.Split(line, ";")[1])
+			log.Printf("[Debug] Ean matched line: %v", line)
+			splited_line := strings.Split(line, ";")
+			if len(splited_line) >= 2 {
+				return strings.TrimSpace(splited_line[1])
+			}
 		}
 	}
 	return ""
 }
+
+// Old.
+// // Find EAN from string.
+// func findEan(s string) string {
+// lines := strings.Split(s, "\n")
+// // (?i) case-insensitive flag.
+// r := regexp.MustCompile(`(?i).*ean.*`)
+// for _, line := range lines {
+// if r.MatchString(line) {
+// return strings.TrimSpace(strings.Split(line, ";")[1])
+// }
+// }
+// return ""
+// }
 
 // Try keep only 2 digits.
 func keepTowDigits(val float64) float64 {
