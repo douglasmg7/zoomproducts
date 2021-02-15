@@ -2,7 +2,7 @@ package main
 
 const (
 	// Invalid format for tech info crash find ean.
-	version string = "1.0.7"
+	version string = "1.0.8"
 
 	// version string = "1.0.6"
 	// // Some debugs removed.

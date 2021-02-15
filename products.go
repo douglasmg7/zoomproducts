@@ -1067,7 +1067,7 @@ func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) 
 	// prodZoom.FreeShipping = "false"
 	// EAN.
 	if prodZunka.EAN == "" {
-		prodZunka.EAN = findEan(prodZunka.TechInfo)
+		prodZunka.EAN = findEan(prodZunka.TechInfo, prodZunka.ObjectID.String())
 	}
 	prodZoom.EAN = prodZunka.EAN
 	// Price from.
@@ -1108,16 +1108,18 @@ func convertProductZunkaToZoom(prodZunka *productZunka) (prodZoom *productZoom) 
 }
 
 // Find EAN from string.
-func findEan(s string) string {
+func findEan(s string, productCode string) string {
 	lines := strings.Split(s, "\n")
 	// (?i) case-insensitive flag.
 	r := regexp.MustCompile(`(?i).*ean.*`)
 	for _, line := range lines {
 		if r.MatchString(line) {
-			log.Printf("[Debug] Ean matched line: %v", line)
 			splited_line := strings.Split(line, ";")
 			if len(splited_line) >= 2 {
 				return strings.TrimSpace(splited_line[1])
+			} else {
+
+				log.Printf("[Debug] Product %v, have wrong EAN matched line: %v ", productCode, line)
 			}
 		}
 	}
