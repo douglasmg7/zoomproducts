@@ -1,8 +1,11 @@
 package main
 
 const (
-	// Invalid format for tech info crash find ean.
-	version string = "1.0.8"
+	// Change AMOUNT_CHARGED_BY_ZOOM from 1.11 to 1.12.
+	version string = "1.1.0"
+
+	// // Invalid format for tech info crash find ean.
+	// version string = "1.0.8"
 
 	// version string = "1.0.6"
 	// // Some debugs removed.
