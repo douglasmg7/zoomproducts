@@ -1,8 +1,12 @@
 package main
 
 const (
-	// Change AMOUNT_CHARGED_BY_ZOOM from 1.11 to 1.12.
-	version string = "1.1.0"
+	// Using only check consistence to update or remove products.
+	// If some information from product is change into zunka site, product must be deactivate from Zoom and activate 10 min after.
+	version string = "1.2.0"
+
+	// // Change AMOUNT_CHARGED_BY_ZOOM from 1.11 to 1.12.
+	// version string = "1.1.0"
 
 	// // Invalid format for tech info crash find ean.
 	// version string = "1.0.8"
